@@ -1,0 +1,357 @@
+#!/bin/bash
+
+usage()
+{
+cat << OPTIONSDOC
+Usage:
+  $0 [OPTION]
+
+Options:
+  -r REPLICAS		number of replicas to create (default: 1)
+  -p PORTS		comma-separated list of ports to use starting with
+			primary (default: 5530,5531,5532,...)
+  -s fan|tree|chain 	replication structure (default: fan)
+			fan = all standbys connect directly to primary
+			tree = one standby connects directly to primary, the
+				remaining ones connect to that standby
+			chain = no more than one standby connects to any node
+  -d DIRS		comma-separated list of directory names starting with
+			primary (default: primary,standby1,standby2,...)
+  -a ARCHIVEDIR		create an archive directory
+  -h help		show this help then exit
+OPTIONSDOC
+}
+
+while getopts “hr:p:s:d:a:” OPTION
+do
+  case $OPTION in
+    h)
+      usage
+      exit 1
+      ;;
+    r)
+      REPLICAS=$OPTARG
+      ;;
+    p)
+      PORTS=$OPTARG
+      ;;
+    s)
+      REPSTRUCT=$OPTARG
+      ;;
+    d)
+      DIRS=$OPTARG
+      ;;
+    a)
+      ARCHIVE_DIR=$OPTARG
+      ;;
+  esac
+done
+
+build_ascii_report()
+{
+  CURRENT_LEVEL=$X
+
+  # Indent everything according to replication structure.
+  if [[ $CURRENT_LEVEL -eq 1 ]]
+  then
+    ASCII_REPORT="[Primary (${PORT_LIST[0]})]\n"
+  else
+    case $REPSTRUCT in
+      fan)
+        INDENT=1
+        ;;
+      tree)
+        if [[ $CURRENT_STANDBY -eq 1 ]]
+        then
+          INDENT=1
+        else
+          INDENT=2
+        fi
+        ;;
+      chain)
+        INDENT=$CURRENT_STANDBY
+        ;;
+    esac
+
+    SPACER=""
+    for (( I=1; I <= $INDENT; I++ ))
+    do
+      SPACER=$SPACER"      "
+      if [[ $I -gt 1 ]]
+      then
+        SPACER=$SPACER"      "
+      fi
+    done
+    ASCII_REPORT=$ASCII_REPORT$SPACER"|\n"
+    ASCII_REPORT=$ASCII_REPORT$SPACER"------[Standby $CURRENT_STANDBY (${PORT_LIST[$CURRENT_STANDBY]})]\n"
+
+  fi
+}
+
+IFS=","
+PORT_LIST=($PORTS)
+DIR_LIST=($DIRS)
+
+
+
+#### Validate parameters ####
+
+# Set default number of replicas to 1
+if [[ -z $REPLICAS ]]
+then
+  REPLICAS=1
+fi
+
+# Set default for archive directory
+if [[ -z $ARCHIVE_DIR ]]
+then
+  ARCHIVE_DIR='archive'
+fi
+
+# Check that the replicas value is numeric if provided.
+if [[ -n $REPLICAS ]] && ! [[ "$REPLICAS" =~ ^[0-9]+$ ]]
+then
+  echo 'Error: The number of replicas must be a numeric value'
+  exit 1
+fi
+
+# Validate replication structure value.
+if [[ -n $REPSTRUCT ]]
+then
+  case $REPSTRUCT in
+    fan|tree|chain)
+      ;;
+    * )
+      echo 'Error: Invalid replica structure specified'
+      exit 1
+  esac
+else
+  REPSTRUCT='fan'
+fi
+
+# Check that there's at least 1 replica when a structure is specified.
+if [[ -z $REPLICAS ]] && [[ -n $REPSTRUCT ]]
+then
+  echo 'Error: Replication structure specified without any replicas'
+fi
+
+# Ensure that if a list of ports has been provided, the number of ports equals
+# the number of replicas.
+if [[ -n $REPLICAS ]] && [[ -n $PORTS ]] && [[ "${#PORT_LIST[@]}" -ne `expr "$REPLICAS" + 1` ]]
+then
+  echo 'Error: The number of ports provided does not match the number of replicas + primary.'
+  exit 1
+fi
+
+# If a list of ports hasn't been specified, generate the list of ports.
+if [[ -z $PORTS ]]
+then
+  PORT_LIST=(5330)
+  for (( X=1; X <= $REPLICAS; X++ ))
+  do
+    PORT_LIST+=(`expr 5330 + $X`)
+  done
+fi
+
+# Check that the number of directories is equal to the number of standbys plus
+# the primary.
+if [[ -n $REPLICAS ]] && [[ -n $DIRS ]] && [[ "${#DIR_LIST[@]}" -ne `expr "$REPLICAS" + 1` ]]
+then
+  echo 'Error: The number of directories provided does not match a primary + the number of replicas.'
+  exit 1
+fi
+
+# If a list of directories was not explicitly specified, generate the default
+# directory names.
+if [[ -z $DIRS ]]
+then
+  DIR_LIST[0]='primary'
+  for (( X=1; X <= $REPLICAS; X++ ))
+  do
+    DIR_LIST[$X]="standby$X"
+  done
+fi
+
+# Check each directory to see if it's empty if it already exists.
+for DIR in "${DIR_LIST[@]}"
+do
+  if [[ -d "$DIR" ]]
+  then
+    if [[ "$(ls -A $DIR)" ]]
+    then
+      echo "Error: The directory '$DIR' already exists and is not empty."
+      exit 1
+    fi
+  fi
+done
+
+
+
+#### Set up instances ####
+
+# Create directories.
+for DIR in "${DIR_LIST[@]}"
+do
+  if ! [[ -d "$DIR" ]]
+  then
+    mkdir -p -m 0700 "$DIR"
+  fi
+done
+
+# Create archive directory
+mkdir -p -m 0700 "$ARCHIVE_DIR"
+
+# Check that the archive directory can be written to.  We can get away with
+# trying to create it first because if the directory already existed but
+# we don't have permissions to write to it, mkdir will act as if it succeeded.
+if ! [[ -w $ARCHIVE_DIR ]]
+then
+  echo "Error: The archive directory '$ARCHIVE_DIR' doesn't have write permissions."
+fi
+
+# Initialise the primary and create standbys.
+
+for (( X=1; X <= "${#DIR_LIST[@]}"; X++ ))
+do
+  CURRENT_STANDBY=`expr $X - 1`
+  MAX_WAL_SENDERS=0
+  CHECKPOINT_SEGMENTS=3
+  DIR="${DIR_LIST[$CURRENT_STANDBY]}"
+
+  # Create the primary and create standby from base backup of primary.
+  if [[ "$X" -eq 1 ]]
+  then
+    echo -e "Creating primary in '$DIR'"
+    initdb -D $DIR -E 'UTF8' > /dev/null
+
+    # Create a copy of the config before we modify it because otherwise every
+    # standby wlil get a copy of the primary's modifications as well as their
+    # own.
+    cp $DIR/postgresql.conf{,.template}
+
+    echo "archive_mode = on" >> $DIR/postgresql.conf
+    echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')" >> $DIR/postgresql.conf
+  else
+    echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'"
+    pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} -X stream > /dev/null
+
+    # Restore the original copy of the config for the standby as we want a
+    # pristine copy, not the primary's modified one.
+    mv $DIR/postgresql.conf{.template,}
+    echo -e "$(echo restore_command = \'cp \"`readlink -f $ARCHIVE_DIR`/%f\" \"%p\"\')" >> $DIR/recovery.conf
+  fi
+
+  build_ascii_report
+
+  # Set max_wal_senders appropriately so that it has a sufficient amount to
+  # serve the standbys that will subscribe to it.
+  case $REPSTRUCT in
+    fan)
+      # Only the primary will be sending WAL.
+      if [[ "$X" -eq 1 ]]
+      then
+        MAX_WAL_SENDERS=`expr "$REPLICAS" + 3`
+      fi
+      ;;
+    tree)
+      # Only the primary and 1st standby will be sending WAL.
+      case "$X" in
+        1)
+          MAX_WAL_SENDERS=3
+          ;;
+        2)
+          MAX_WAL_SENDERS=`expr "$REPLICAS" + 2`
+          ;;
+      esac
+      ;;
+    chain)
+      # The primary and every standby except the last will be sending WAL.
+      if [[ "$X" -lt `expr $REPLICAS + 1` ]]
+      then
+         MAX_WAL_SENDERS=3
+      fi
+      ;;
+  esac
+
+  # Configure to replicate.
+  echo "wal_level = 'hot_standby'" >> "$DIR/postgresql.conf"
+  echo "port = ${PORT_LIST[`expr $X - 1`]}" >> "$DIR/postgresql.conf"
+
+  # Only set up streaming replication configuration for instances that will
+  # use it.
+  if [[ "$MAX_WAL_SENDERS" > 0 ]]
+  then
+    echo "max_wal_senders = $MAX_WAL_SENDERS" >> $DIR/postgresql.conf
+    echo "wal_keep_segments = 32" >> $DIR/postgresql.conf
+
+    # Add authentication entries to replicate to a slave.
+    echo "local   replication     all                                trust" >> $DIR/pg_hba.conf
+    echo "host    replication     all        127.0.0.1/32            trust" >> $DIR/pg_hba.conf
+    echo "host    replication     all        ::1/128                 trust" >> $DIR/pg_hba.conf
+  fi
+
+  # Set all standbys to be hot standbys.
+  if [[ "$X" -ne 1 ]]
+  then
+    echo "hot_standby = on" >> $DIR/postgresql.conf
+    echo "standby_mode = 'on'" >> $DIR/recovery.conf
+
+    case $REPSTRUCT in
+      fan)
+        # All standbys subscribe to the primary directly.
+        SUBSCRIBE_PORT=${PORT_LIST[0]}
+        ;;
+      tree)
+        # Only the 1st standby subscribes directly to the primary. The rest
+        # subscribe to the 1st standby.
+        case $X in
+        2)
+          SUBSCRIBE_PORT=${PORT_LIST[0]}
+          ;;
+        *)
+          SUBSCRIBE_PORT=${PORT_LIST[1]}
+          ;;
+        esac
+        ;;
+      chain)
+        # Every standby subscribes to the previous standby, or primary in the
+        # case of the 1st standby.
+        SUBSCRIBE_PORT=${PORT_LIST[`expr $X - 2`]}
+        ;;
+    esac
+    echo "primary_conninfo = 'host=127.0.0.1 port=$SUBSCRIBE_PORT application_name=standby$CURRENT_STANDBY'" >> $DIR/recovery.conf
+  fi
+
+  # Start the instance now that it's been configured.
+  if [[ "$X" -eq 1 ]]
+  then
+    echo -n "Starting primary... "
+    pg_ctl -D $DIR start > /dev/null
+
+    # If we don't sleep here, the next standby will be set up too quickly for
+    # the primary to start serving WAL for pg_basebackup to work.
+    sleep 2
+  else
+    echo -ne "Starting standby $CURRENT_STANDBY... "
+    pg_ctl -D $DIR start > /dev/null
+  fi
+
+  # Test that the primary or standby has started successfully.
+  sleep 0.5
+  pg_ctl -D $DIR status > /dev/null
+  if [[ $? -eq 0 ]]
+  then
+    echo -ne "\e[00;32m" # green
+    echo -e "SUCCESS!\n"
+  else
+    echo -ne "\e[00;31m" # red
+    echo -e "FAILED!\n"
+  fi
+  tput sgr0 # reset colours
+
+done
+
+# Output the final ASCII representation of the replicaiton structure
+echo -e $ASCII_REPORT
+
+exit 1
