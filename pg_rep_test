@@ -224,13 +224,17 @@ do
     echo -e "Creating primary in '$DIR'"
     initdb -D $DIR -E 'UTF8' > /dev/null
 
-    # Create a copy of the config before we modify it because otherwise every
-    # standby wlil get a copy of the primary's modifications as well as their
-    # own.
-    cp $DIR/postgresql.conf{,.template}
+    # Reduce the resource requirements to enable a large number of standbys
+    echo "shared_buffers = 8MB" >> $DIR/postgresql.conf
+    echo "max_connections = 7" >> $DIR/postgresql.conf
 
     echo "archive_mode = on" >> $DIR/postgresql.conf
     echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')" >> $DIR/postgresql.conf
+
+    # Create a copy of the config before we modify it further because the
+    # remaining settings should only apply to the primary. Every standby
+    # will use this copy.
+    cp $DIR/postgresql.conf{,.template}
   else
     echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'"
     pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} -X stream > /dev/null
@@ -295,6 +299,7 @@ do
   then
     echo "hot_standby = on" >> $DIR/postgresql.conf
     echo "standby_mode = 'on'" >> $DIR/recovery.conf
+    echo "recovery_target_timeline = 'latest'" >> $DIR/recovery.conf
 
     case $REPSTRUCT in
       fan)
