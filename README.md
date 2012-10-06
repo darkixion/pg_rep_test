@@ -3,7 +3,7 @@ pg_rep_test
 
 A tool to assist with setting up replication for testing
 
-Usage:
+`Usage:
   ./pg_rep_test [OPTION]
 
 Options:
@@ -18,7 +18,7 @@ Options:
   -d DIRS		comma-separated list of directory names starting with
 			primary (default: primary,standby1,standby2,...)
   -a ARCHIVEDIR		create an archive directory
-  -h help		show this help then exit
+  -h help		show this help then exit`
 
 ## Example
 
