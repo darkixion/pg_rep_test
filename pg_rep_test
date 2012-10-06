@@ -17,7 +17,7 @@ Options:
                          chain = no more than one standby connects to any node
   -d DIRS                comma-separated list of directory names starting with
                          primary (default: primary,standby1,standby2,...)
-  -a ARCHIVEDIR          create an archive directory
+  -a ARCHIVEDIR          name of the archive directory (default: archive)
   -h                     show this help then exit
 OPTIONSDOC
 }

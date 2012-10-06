@@ -17,7 +17,7 @@ A tool to assist with setting up replication for testing
 	                        chain = no more than one standby connects to any node
 	  -d DIRS               comma-separated list of directory names starting with
 	                        primary (default: primary,standby1,standby2,...)
-	  -a ARCHIVEDIR         create an archive directory
+	  -a ARCHIVEDIR         name of the archive directory (default: archive)
 	  -h help               show this help then exit
 
 ## Example
