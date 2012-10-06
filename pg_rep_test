@@ -226,7 +226,6 @@ do
 
     # Reduce the resource requirements to enable a large number of standbys
     echo "shared_buffers = 8MB" >> $DIR/postgresql.conf
-    echo "max_connections = 7" >> $DIR/postgresql.conf
 
     echo "archive_mode = on" >> $DIR/postgresql.conf
     echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')" >> $DIR/postgresql.conf
