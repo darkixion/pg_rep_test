@@ -4,7 +4,7 @@ pg_rep_test
 A tool to assist with setting up replication for testing
 
 	Usage:
-	  ./pg_rep_test [OPTION]
+	  pg_rep_test [OPTION]
 	
 	Options:
 	  -r REPLICAS           number of replicas to create (default: 1)
