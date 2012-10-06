@@ -18,7 +18,7 @@ A tool to assist with setting up replication for testing
 	  -d DIRS               comma-separated list of directory names starting with
 	                        primary (default: primary,standby1,standby2,...)
 	  -a ARCHIVEDIR         name of the archive directory (default: archive)
-	  -h help               show this help then exit
+	  -h                    show this help then exit
 
 ## Example
 
