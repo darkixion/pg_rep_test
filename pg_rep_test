@@ -18,11 +18,14 @@ Options:
   -d DIRS                comma-separated list of directory names starting with
                          primary (default: primary,standby1,standby2,...)
   -a ARCHIVEDIR          name of the archive directory (default: archive)
+  -l LOGFILE             write log messages to a file, but it will not log
+                         any pre-check messages
+  -L                     enable database logging in every instance
   -h                     show this help then exit
 OPTIONSDOC
 }
 
-while getopts “hr:p:s:d:a:” OPTION
+while getopts “hr:p:s:d:a:l:L:” OPTION
 do
   case $OPTION in
     h)
@@ -43,6 +46,12 @@ do
       ;;
     a)
       ARCHIVE_DIR=$OPTARG
+      ;;
+    l)
+      LOG_FILE=$OPTARG
+      ;;
+    L)
+      ENABLE_LOGS=true
       ;;
   esac
 done
@@ -88,6 +97,20 @@ build_ascii_report()
   fi
 }
 
+# Output text to a log file, prepending the date and time.
+write_log() {
+  while IFS= read -r -t 0.2 LINE
+  do
+    if [[ $1 == STDOUT ]]
+    then
+      echo "$(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE" | tee -a $LOG_FILE
+      echo "$line" >> $LOG_FILE
+    else
+      echo "$(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE" >> $LOG_FILE
+    fi
+  done
+}
+
 IFS=","
 PORT_LIST=($PORTS)
 DIR_LIST=($DIRS)
@@ -96,22 +119,28 @@ DIR_LIST=($DIRS)
 
 #### Validate parameters ####
 
-# Set default number of replicas to 1
+# Set default number of replicas to 1.
 if [[ -z $REPLICAS ]]
 then
   REPLICAS=1
 fi
 
-# Set default for archive directory
+# Set default for archive directory.
 if [[ -z $ARCHIVE_DIR ]]
 then
   ARCHIVE_DIR='archive'
 fi
 
-# Check that the replicas value is numeric if provided.
-if [[ -n $REPLICAS ]] && ! [[ "$REPLICAS" =~ ^[0-9]+$ ]]
+# Set default for log output
+if [[ -z $LOG_FILE ]]
 then
-  echo 'Error: The number of replicas must be a numeric value'
+  LOG_FILE='/dev/null'
+fi
+
+# Check that the replicas value is numeric if provided.
+if [[ -n $REPLICAS ]] && ! [[ $REPLICAS =~ ^[0-9]+$ ]]
+then
+  echo 'Error: The number of replicas must be a numeric value.'
   exit 1
 fi
 
@@ -122,7 +151,7 @@ then
     fan|tree|chain)
       ;;
     * )
-      echo 'Error: Invalid replica structure specified'
+      echo 'Error: Invalid replica structure specified.'
       exit 1
   esac
 else
@@ -132,12 +161,12 @@ fi
 # Check that there's at least 1 replica when a structure is specified.
 if [[ -z $REPLICAS ]] && [[ -n $REPSTRUCT ]]
 then
-  echo 'Error: Replication structure specified without any replicas'
+  echo 'Error: Replication structure specified without any replicas.'
 fi
 
 # Ensure that if a list of ports has been provided, the number of ports equals
 # the number of replicas.
-if [[ -n $REPLICAS ]] && [[ -n $PORTS ]] && [[ "${#PORT_LIST[@]}" -ne `expr "$REPLICAS" + 1` ]]
+if [[ -n $REPLICAS ]] && [[ -n $PORTS ]] && [[ ${#PORT_LIST[@]} -ne `expr $REPLICAS + 1` ]]
 then
   echo 'Error: The number of ports provided does not match the number of replicas + primary.'
   exit 1
@@ -155,7 +184,7 @@ fi
 
 # Check that the number of directories is equal to the number of standbys plus
 # the primary.
-if [[ -n $REPLICAS ]] && [[ -n $DIRS ]] && [[ "${#DIR_LIST[@]}" -ne `expr "$REPLICAS" + 1` ]]
+if [[ -n $REPLICAS ]] && [[ -n $DIRS ]] && [[ ${#DIR_LIST[@]} -ne `expr $REPLICAS + 1` ]]
 then
   echo 'Error: The number of directories provided does not match a primary + the number of replicas.'
   exit 1
@@ -173,11 +202,11 @@ then
 fi
 
 # Check each directory to see if it's empty if it already exists.
-for DIR in "${DIR_LIST[@]}"
+for DIR in ${DIR_LIST[@]}
 do
-  if [[ -d "$DIR" ]]
+  if [[ -d $DIR ]]
   then
-    if [[ "$(ls -A $DIR)" ]]
+    if [[ $(ls -A $DIR) ]]
     then
       echo "Error: The directory '$DIR' already exists and is not empty."
       exit 1
@@ -189,17 +218,21 @@ done
 
 #### Set up instances ####
 
+IFS=" "
+echo "Command issued: $0 $*" > $LOG_FILE
+IFS=","
+
 # Create directories.
-for DIR in "${DIR_LIST[@]}"
+for DIR in ${DIR_LIST[@]}
 do
-  if ! [[ -d "$DIR" ]]
+  if ! [[ -d $DIR ]]
   then
-    mkdir -p -m 0700 "$DIR"
+    mkdir -p -m 0700 $DIR
   fi
 done
 
 # Create archive directory
-mkdir -p -m 0700 "$ARCHIVE_DIR"
+mkdir -p -m 0700 $ARCHIVE_DIR
 
 # Check that the archive directory can be written to.  We can get away with
 # trying to create it first because if the directory already existed but
@@ -211,21 +244,27 @@ fi
 
 # Initialise the primary and create standbys.
 
-for (( X=1; X <= "${#DIR_LIST[@]}"; X++ ))
+for (( X=1; X <= ${#DIR_LIST[@]}; X++ ))
 do
   CURRENT_STANDBY=`expr $X - 1`
   MAX_WAL_SENDERS=0
   CHECKPOINT_SEGMENTS=3
-  DIR="${DIR_LIST[$CURRENT_STANDBY]}"
+  DIR=${DIR_LIST[$CURRENT_STANDBY]}
 
   # Create the primary and create standby from base backup of primary.
-  if [[ "$X" -eq 1 ]]
+  if [[ $X -eq 1 ]]
   then
-    echo -e "Creating primary in '$DIR'"
-    initdb -D $DIR -E 'UTF8' > /dev/null
+    echo -e "Creating primary in '$DIR'" | write_log STDOUT
+    echo "initdb -D $DIR -E 'UTF8'" | write_log
+    initdb -D $DIR -E 'UTF8' 2>&1 >> $LOG_FILE
 
-    # Reduce the resource requirements to enable a large number of standbys
+    # Reduce the resource requirements to enable a large number of standbys.
     echo "shared_buffers = 8MB" >> $DIR/postgresql.conf
+
+    if $ENABLE_LOGS
+    then
+      echo "logging_collector = on" >> $DIR/postgresql.conf
+    fi
 
     echo "archive_mode = on" >> $DIR/postgresql.conf
     echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')" >> $DIR/postgresql.conf
@@ -235,8 +274,9 @@ do
     # will use this copy.
     cp $DIR/postgresql.conf{,.template}
   else
-    echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'"
-    pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} -X stream > /dev/null
+    echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'" | write_log STDOUT
+    echo "pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} -X stream" | write_log
+    pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} -X stream | write_log
 
     # Restore the original copy of the config for the standby as we want a
     # pristine copy, not the primary's modified one.
@@ -251,25 +291,25 @@ do
   case $REPSTRUCT in
     fan)
       # Only the primary will be sending WAL.
-      if [[ "$X" -eq 1 ]]
+      if [[ $X -eq 1 ]]
       then
-        MAX_WAL_SENDERS=`expr "$REPLICAS" + 3`
+        MAX_WAL_SENDERS=`expr $REPLICAS + 3`
       fi
       ;;
     tree)
       # Only the primary and 1st standby will be sending WAL.
-      case "$X" in
+      case $X in
         1)
           MAX_WAL_SENDERS=3
           ;;
         2)
-          MAX_WAL_SENDERS=`expr "$REPLICAS" + 2`
+          MAX_WAL_SENDERS=`expr $REPLICAS + 2`
           ;;
       esac
       ;;
     chain)
       # The primary and every standby except the last will be sending WAL.
-      if [[ "$X" -lt `expr $REPLICAS + 1` ]]
+      if [[ $X -lt `expr $REPLICAS + 1` ]]
       then
          MAX_WAL_SENDERS=3
       fi
@@ -277,12 +317,12 @@ do
   esac
 
   # Configure to replicate.
-  echo "wal_level = 'hot_standby'" >> "$DIR/postgresql.conf"
-  echo "port = ${PORT_LIST[`expr $X - 1`]}" >> "$DIR/postgresql.conf"
+  echo "wal_level = 'hot_standby'" >> $DIR/postgresql.conf
+  echo "port = ${PORT_LIST[`expr $X - 1`]}" >> $DIR/postgresql.conf
 
   # Only set up streaming replication configuration for instances that will
   # use it.
-  if [[ "$MAX_WAL_SENDERS" > 0 ]]
+  if [[ $MAX_WAL_SENDERS > 0 ]]
   then
     echo "max_wal_senders = $MAX_WAL_SENDERS" >> $DIR/postgresql.conf
     echo "wal_keep_segments = 32" >> $DIR/postgresql.conf
@@ -294,7 +334,7 @@ do
   fi
 
   # Set all standbys to be hot standbys.
-  if [[ "$X" -ne 1 ]]
+  if [[ $X -ne 1 ]]
   then
     echo "hot_standby = on" >> $DIR/postgresql.conf
     echo "standby_mode = 'on'" >> $DIR/recovery.conf
@@ -327,35 +367,37 @@ do
   fi
 
   # Start the instance now that it's been configured.
-  if [[ "$X" -eq 1 ]]
+  if [[ $X -eq 1 ]]
   then
-    echo -n "Starting primary... "
-    pg_ctl -D $DIR start > /dev/null
+    echo -n "Starting primary... " | write_log STDOUT
+    echo "pg_ctl -D $DIR start" | write_log
+    pg_ctl -D $DIR start | write_log
 
     # If we don't sleep here, the next standby will be set up too quickly for
     # the primary to start serving WAL for pg_basebackup to work.
     sleep 2
   else
-    echo -ne "Starting standby $CURRENT_STANDBY... "
-    pg_ctl -D $DIR start > /dev/null
+    echo -ne "Starting standby $CURRENT_STANDBY... " | write_log STDOUT
+    echo "pg_ctl -D $DIR start" | write_log
+    pg_ctl -D $DIR start | write_log
   fi
 
   # Test that the primary or standby has started successfully.
   sleep 0.5
-  pg_ctl -D $DIR status > /dev/null
+  pg_ctl -D $DIR status | write_log
   if [[ $? -eq 0 ]]
   then
     echo -ne "\e[00;32m" # green
-    echo -e "SUCCESS!\n"
+    echo -e "SUCCESS!\n" | write_log STDOUT
   else
     echo -ne "\e[00;31m" # red
-    echo -e "FAILED!\n"
+    echo -e "FAILED!\n" | write_log STDOUT 
   fi
   tput sgr0 # reset colours
 
 done
 
-# Output the final ASCII representation of the replicaiton structure
+# Output the final ASCII representation of the replicaiton structure.
 echo -e $ASCII_REPORT
 
 exit 1
