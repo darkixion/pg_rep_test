@@ -35,29 +35,29 @@ to the primary.
 This would also produce the following ASCII-diagram which displays the
 configuration they were created in and the port numbers used:
 
-	[Primary (5330)]
+	[Primary (5530)]
 	      |
-	      ------[Standby 1 (5331)]
+	      ------[Standby 1 (5531)]
 	                  |
-	                  ------[Standby 2 (5332)]
+	                  ------[Standby 2 (5532)]
 	                  |
-	                  ------[Standby 3 (5333)]
+	                  ------[Standby 3 (5533)]
 	                  |
-	                  ------[Standby 4 (5334)]
+	                  ------[Standby 4 (5534)]
 	                  |
-	                  ------[Standby 5 (5335)]
+	                  ------[Standby 5 (5535)]
 	                  |
-	                  ------[Standby 6 (5336)]
+	                  ------[Standby 6 (5536)]
 	                  |
-	                  ------[Standby 7 (5337)]
+	                  ------[Standby 7 (5537)]
 	                  |
-	                  ------[Standby 8 (5338)]
+	                  ------[Standby 8 (5538)]
 	                  |
-	                  ------[Standby 9 (5339)]
+	                  ------[Standby 9 (5539)]
 	                  |
-	                  ------[Standby 10 (5340)]
+	                  ------[Standby 10 (5540)]
 	                  |
-	                  ------[Standby 11 (5341)]
+	                  ------[Standby 11 (5541)]
 	                  |
 	                  ------[Standby 12 (5342)]
 	                  |

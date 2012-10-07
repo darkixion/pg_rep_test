@@ -146,10 +146,10 @@ fi
 # If a list of ports hasn't been specified, generate the list of ports.
 if [[ -z $PORTS ]]
 then
-  PORT_LIST=(5330)
+  PORT_LIST=(5530)
   for (( X=1; X <= $REPLICAS; X++ ))
   do
-    PORT_LIST+=(`expr 5330 + $X`)
+    PORT_LIST+=(`expr 5530 + $X`)
   done
 fi
 
