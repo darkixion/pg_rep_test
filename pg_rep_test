@@ -449,7 +449,7 @@ do
 
 done
 
-# Output the final ASCII representation of the replicaiton structure.
+# Output the final ASCII representation of the replication structure.
 echo -e $ASCII_REPORT
 
 exit 1
