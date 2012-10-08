@@ -7,21 +7,22 @@ A tool to assist with setting up replication for testing
 	  pg_rep_test [OPTION]
 	
 	Options:
-	  -r REPLICAS            number of replicas to create (default: 1)
+	  -a ARCHIVEDIR          name of the archive directory (default: archive)
+	  -d DIRS                comma-separated list of directory names starting with
+	  -l LOGFILE             write log messages to a file, but it will not log
+	                         any pre-check messages
+	  -L                     enable database logging in every instance
 	  -p PORTS               comma-separated list of ports to use starting with
 	                         primary (default: 5530,5531,5532,...)
+	  -r REPLICAS            number of replicas to create (default: 1)
 	  -s fan|tree|chain      replication structure (default: fan)
 	                         fan = all standbys connect directly to primary
 	                         tree = one standby connects directly to primary, the
 	                                remaining ones connect to that standby
 	                         chain = no more than one standby connects to any node
-	  -d DIRS                comma-separated list of directory names starting with
 	                         primary (default: primary,standby1,standby2,...)
-	  -a ARCHIVEDIR          name of the archive directory (default: archive)
-	  -l LOGFILE             write log messages to a file, but it will not log
-	                         any pre-check messages
-	  -L                     enable database logging in every instance
-	  -h                     show this help then exit
+	  -S                     configures all standbys to be synchronous
+	  -?                     show this help then exit
 
 
 ## Example
