@@ -178,10 +178,26 @@ fi
 # If a list of ports hasn't been specified, generate the list of ports.
 if [[ -z $PORTS ]]
 then
-  PORT_LIST=(5530)
-  for (( X=1; X <= $REPLICAS; X++ ))
+  PORT_LIST=()
+  for (( PORT=5530, PORT_COUNT=0; PORT_COUNT <= $REPLICAS; PORT++ ))
   do
-    PORT_LIST+=(`expr 5530 + $X`)
+    if lsof -i:$PORT > /dev/null
+    then
+      continue; # port in use, so try next one
+    else
+      PORT_LIST+=($PORT)
+      PORT_COUNT=$[PORT_COUNT + 1];
+    fi
+  done
+else
+  # Check that the ports listed aren't already in use.
+  for PORT in ${PORT_LIST[@]}
+  do
+    if lsof -i:$PORT > /dev/null
+    then
+      echo "Error: Port $PORT already in use.  Specify a list of unused ports with the -p option."
+      exit 1
+    fi
   done
 fi
 
