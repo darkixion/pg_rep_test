@@ -25,7 +25,7 @@ Options:
 OPTIONSDOC
 }
 
-while getopts “hr:p:s:d:a:l:L:” OPTION
+while getopts “hr:p:s:d:a:l:L” OPTION
 do
   case $OPTION in
     h)
