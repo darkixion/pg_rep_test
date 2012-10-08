@@ -99,15 +99,14 @@ build_ascii_report()
 
 # Output text to a log file, prepending the date and time.
 write_log() {
-  while IFS= read -r -t 0.2 LINE
+  while IFS= read -r LINE
   do
     if [[ $1 == STDOUT ]]
     then
-      echo "$(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE" | tee -a $LOG_FILE
-      echo "$line" >> $LOG_FILE
-    else
-      echo "$(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE" >> $LOG_FILE
+      echo $LINE
     fi
+
+    echo "$(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE" >> $LOG_FILE
   done
 }
 
@@ -371,7 +370,7 @@ do
   then
     echo -n "Starting primary... " | write_log STDOUT
     echo "pg_ctl -D $DIR start" | write_log
-    pg_ctl -D $DIR start | write_log
+    pg_ctl -D $DIR -s start >> $LOG_FILE
 
     # If we don't sleep here, the next standby will be set up too quickly for
     # the primary to start serving WAL for pg_basebackup to work.
@@ -379,7 +378,7 @@ do
   else
     echo -ne "Starting standby $CURRENT_STANDBY... " | write_log STDOUT
     echo "pg_ctl -D $DIR start" | write_log
-    pg_ctl -D $DIR start | write_log
+    pg_ctl -D $DIR -s start >> $LOG_FILE
   fi
 
   # Test that the primary or standby has started successfully.
