@@ -7,51 +7,55 @@ Usage:
   $0 [OPTION]
 
 Options:
-  -r REPLICAS            number of replicas to create (default: 1)
+  -a ARCHIVEDIR          name of the archive directory (default: archive)
+  -d DIRS                comma-separated list of directory names starting with
+  -l LOGFILE             write log messages to a file, but it will not log
+                         any pre-check messages
+  -L                     enable database logging in every instance
   -p PORTS               comma-separated list of ports to use starting with
 			 primary (default: 5530,5531,5532,...)
+  -r REPLICAS            number of replicas to create (default: 1)
   -s fan|tree|chain      replication structure (default: fan)
                          fan = all standbys connect directly to primary
                          tree = one standby connects directly to primary, the
                                 remaining ones connect to that standby
                          chain = no more than one standby connects to any node
-  -d DIRS                comma-separated list of directory names starting with
                          primary (default: primary,standby1,standby2,...)
-  -a ARCHIVEDIR          name of the archive directory (default: archive)
-  -l LOGFILE             write log messages to a file, but it will not log
-                         any pre-check messages
-  -L                     enable database logging in every instance
-  -h                     show this help then exit
+  -S                     configures all standbys to be synchronous
+  -?                     show this help then exit
 OPTIONSDOC
 }
 
-while getopts “hr:p:s:d:a:l:L” OPTION
+while getopts “a:d:l:Lp:r:s:S?” OPTION
 do
   case $OPTION in
-    h)
-      usage
-      exit 1
-      ;;
-    r)
-      REPLICAS=$OPTARG
-      ;;
-    p)
-      PORTS=$OPTARG
-      ;;
-    s)
-      REPSTRUCT=$OPTARG
+    a)
+      ARCHIVE_DIR=$OPTARG
       ;;
     d)
       DIRS=$OPTARG
-      ;;
-    a)
-      ARCHIVE_DIR=$OPTARG
       ;;
     l)
       LOG_FILE=$OPTARG
       ;;
     L)
       ENABLE_LOGS=true
+      ;;
+    p)
+      PORTS=$OPTARG
+      ;;
+    r)
+      REPLICAS=$OPTARG
+      ;;
+    s)
+      REPSTRUCT=$OPTARG
+      ;;
+    S)
+      SYNCHRONOUS=true
+      ;;
+    ?)
+      usage
+      exit 1
       ;;
   esac
 done
@@ -263,6 +267,18 @@ do
     if $ENABLE_LOGS
     then
       echo "logging_collector = on" >> $DIR/postgresql.conf
+    fi
+
+    # Define list of standbys.  We want to set this up in the primary prior to
+    # base backup so that any promoted standby can use the same list.
+    if $SYNCHRONOUS
+    then
+      SYNC_STANDBY_LIST='standby1'
+      for (( SYNC_STANDBY=2; SYNC_STANDBY <= $REPLICAS; SYNC_STANDBY++ ))
+      do
+        SYNC_STANDBY_LIST=$SYNC_STANDBY_LIST",standby$SYNC_STANDBY"
+      done
+        echo "synchronous_standby_names = '$SYNC_STANDBY_LIST'" >> $DIR/postgresql.conf
     fi
 
     echo "archive_mode = on" >> $DIR/postgresql.conf
