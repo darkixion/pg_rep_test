@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Get the version details of the current PostgreSQL installation
+read PG_MAJOR_VERSION PG_MINOR_VERSION <<<$(postgres -V | grep -Po '\d+?\.\d+?' | cut -d '.' --output-delimiter=' ' -f 1,2)
+
 usage()
 {
 cat << OPTIONSDOC
@@ -118,6 +121,22 @@ IFS=","
 PORT_LIST=($PORTS)
 DIR_LIST=($DIRS)
 
+# Check that we're using a supported version
+if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -eq 0 ]] ) || [[ PG_MAJOR_VERSION -lt 9 ]]
+then
+  echo "Error: Only PostgreSQL 9.1 and above is supported.  You are using"\
+       "PostgreSQL $PG_MAJOR_VERSION.$PG_MINOR_VERSION"
+  exit 1
+fi
+
+# From PostgreSQL 9.2, the -X parameter on pg_basebackup is supported. Prior to
+# that we have to use -x.
+if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -ge 2 ]] ) || [[ PG_MAJOR_VERSION -gt 9 ]]
+then
+  BASEBACKUP_XLOG_OPTION='-X stream'
+else
+  BASEBACKUP_XLOG_OPTION='-x'
+fi
 
 
 #### Validate parameters ####
@@ -159,6 +178,15 @@ then
   esac
 else
   REPSTRUCT='fan'
+fi
+
+# Throw an error if any attempt to use a cascading replication feature prior to
+# PostgreSQL 9.2.
+if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -lt 2 ]] ) && [[ $REPSTRUCT != 'fan' ]]
+then
+  echo "Error: The replication structure '$REPSTRUCT' is not supported prior to"\
+       "PostgreSQL 9.2 as it requires cascading replication."
+  exit 1
 fi
 
 # Ensure that if a list of ports has been provided, the number of ports equals
@@ -226,8 +254,6 @@ do
     fi
   fi
 done
-
-
 
 #### Set up instances ####
 
@@ -300,8 +326,9 @@ do
     cp $DIR/postgresql.conf{,.template}
   else
     echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'" | write_log STDOUT
-    echo "pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} -X stream" | write_log
-    pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} -X stream | write_log
+    PG_BASEBACKUP="pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} $BASEBACKUP_XLOG_OPTION"
+    echo $PG_BASEBACKUP | write_log
+    eval $PG_BASEBACKUP | write_log
 
     # Restore the original copy of the config for the standby as we want a
     # pristine copy, not the primary's modified one.
