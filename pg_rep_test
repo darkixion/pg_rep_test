@@ -161,12 +161,6 @@ else
   REPSTRUCT='fan'
 fi
 
-# Check that there's at least 1 replica when a structure is specified.
-if [[ -z $REPLICAS ]] && [[ -n $REPSTRUCT ]]
-then
-  echo 'Error: Replication structure specified without any replicas.'
-fi
-
 # Ensure that if a list of ports has been provided, the number of ports equals
 # the number of replicas.
 if [[ -n $REPLICAS ]] && [[ -n $PORTS ]] && [[ ${#PORT_LIST[@]} -ne `expr $REPLICAS + 1` ]]
