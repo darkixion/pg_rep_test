@@ -30,8 +30,8 @@ OPTIONSDOC
 }
 
 BLUE='\e[1;94m'
-GREEN='\e[00;32m'
-RED='\e[00;31m'
+GREEN='\e[1;32m'
+RED='\e[1;31m'
 
 ENABLE_LOGS=false
 SYNCHRONOUS=false
