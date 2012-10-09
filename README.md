@@ -9,6 +9,7 @@ A tool to assist with setting up replication for testing
 	Options:
 	  -a ARCHIVEDIR          name of the archive directory (default: archive)
 	  -d DIRS                comma-separated list of directory names starting with
+	                         primary (default: primary,standby1,standby2,...)
 	  -l LOGFILE             write log messages to a file, but it will not log
 	                         any pre-check messages
 	  -L                     enable database logging in every instance
@@ -20,7 +21,6 @@ A tool to assist with setting up replication for testing
 	                         tree = one standby connects directly to primary, the
 	                                remaining ones connect to that standby
 	                         chain = no more than one standby connects to any node
-	                         primary (default: primary,standby1,standby2,...)
 	  -S                     configures all standbys to be synchronous
 	  -?                     show this help then exit
 
