@@ -132,7 +132,7 @@ write_log()
         echo $OPTION $LINE
     fi
 
-    echo $OPTION "$(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE" >> $LOG_FILE
+    echo "$(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE" >> $LOG_FILE
   done
 }
 
@@ -147,6 +147,25 @@ output_report()
   echo -ne "$BLUE  $TITLE: "
   tput sgr0
   echo $VALUE
+}
+
+# Based on the status provided, reports SUCCESS or FAILED
+# Parameter 1: The exit code of the process being reported
+report_status()
+{
+  STATUS=$1
+
+  if [[ $STATUS -eq 0 ]]
+  then
+    echo -ne $GREEN # green
+    echo -e " SUCCESS!\n" | write_log STDOUT
+  else
+    echo -ne $RED # red
+    echo -e " FAILED!\n" | write_log STDOUT
+  fi
+  tput sgr0 # reset colours
+
+  return $STATUS
 }
 
 IFS=","
@@ -165,7 +184,7 @@ fi
 # that we have to use -x.
 if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -ge 2 ]] ) || [[ PG_MAJOR_VERSION -gt 9 ]]
 then
-  BASEBACKUP_XLOG_OPTION='-X stream'
+  BASEBACKUP_XLOG_OPTION='-Xstream'
 else
   BASEBACKUP_XLOG_OPTION='-x'
 fi
@@ -345,9 +364,16 @@ do
   # Create the primary and create standby from base backup of primary.
   if [[ $INSTANCE -eq 1 ]]
   then
-    echo -e "Creating primary in '$DIR'" | write_log STDOUT
+    echo -e "Creating primary in '$DIR'..." | write_log STDOUT NONEWLINE
     echo "initdb -D $DIR -E 'UTF8'" | write_log
     initdb -D $DIR -E 'UTF8' &>> $LOG_FILE
+    report_status $?
+
+    if [[ $? -ne 0 ]]
+    then
+      echo "Error: Unable to create primary."
+      exit 1
+    fi
 
     # Reduce the resource requirements to enable a large number of standbys.
     echo "shared_buffers = 8MB" >> $DIR/postgresql.conf
@@ -377,10 +403,17 @@ do
     # will use this copy.
     cp $DIR/postgresql.conf{,.template}
   else
-    echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'" | write_log STDOUT
+    echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'..." | write_log STDOUT NONEWLINE
     PG_BASEBACKUP="pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} $BASEBACKUP_XLOG_OPTION"
     echo $PG_BASEBACKUP | write_log
-    eval $PG_BASEBACKUP | write_log
+    pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} $BASEBACKUP_XLOG_OPTION &>> $LOG_FILE
+
+    report_status $?
+
+    if [[ $? -ne 0 ]]
+    then
+      continue
+    fi
 
     # Restore the original copy of the config for the standby as we want a
     # pristine copy, not the primary's modified one.
@@ -489,15 +522,7 @@ do
   # Test that the primary or standby has started successfully.
   sleep 0.5
   pg_ctl -D $DIR status | write_log
-  if [[ $? -eq 0 ]]
-  then
-    echo -ne $GREEN # green
-    echo -e "SUCCESS!\n" | write_log STDOUT
-  else
-    echo -ne $RED # red
-    echo -e "FAILED!\n" | write_log STDOUT
-  fi
-  tput sgr0 # reset colours
+  report_status $?
 
 done
 
