@@ -77,7 +77,7 @@ build_ascii_report()
   # Indent everything according to replication structure.
   if [[ $CURRENT_LEVEL -eq 1 ]]
   then
-    ASCII_REPORT="[Primary (${PORT_LIST[0]})]\n"
+    ASCII_REPORT="\n[Primary (${PORT_LIST[0]})]\n"
   else
     case $REPSTRUCT in
       fan)
@@ -99,14 +99,14 @@ build_ascii_report()
     SPACER=""
     for (( I=1; I <= $INDENT; I++ ))
     do
-      SPACER=$SPACER"      "
+      SPACER=$SPACER"    "
       if [[ $I -gt 1 ]]
       then
-        SPACER=$SPACER"      "
+        SPACER=$SPACER"    "
       fi
     done
     ASCII_REPORT=$ASCII_REPORT$SPACER"|\n"
-    ASCII_REPORT=$ASCII_REPORT$SPACER"------[Standby $CURRENT_STANDBY (${PORT_LIST[$CURRENT_STANDBY]})]\n"
+    ASCII_REPORT=$ASCII_REPORT$SPACER"---[Standby $CURRENT_STANDBY (${PORT_LIST[$CURRENT_STANDBY]})]\n"
 
   fi
 }
@@ -158,10 +158,10 @@ report_status()
   if [[ $STATUS -eq 0 ]]
   then
     echo -ne $GREEN # green
-    echo -e " SUCCESS!\n" | write_log STDOUT
+    echo -e " SUCCESS!" | write_log STDOUT
   else
     echo -ne $RED # red
-    echo -e " FAILED!\n" | write_log STDOUT
+    echo -e " FAILED!" | write_log STDOUT
   fi
   tput sgr0 # reset colours
 
@@ -464,10 +464,13 @@ do
     echo "max_wal_senders = $MAX_WAL_SENDERS" >> $DIR/postgresql.conf
     echo "wal_keep_segments = 32" >> $DIR/postgresql.conf
 
-    # Add authentication entries to replicate to a slave.
-    echo "local   replication     all                                trust" >> $DIR/pg_hba.conf
-    echo "host    replication     all        127.0.0.1/32            trust" >> $DIR/pg_hba.conf
-    echo "host    replication     all        ::1/128                 trust" >> $DIR/pg_hba.conf
+    if [[ $INSTANCE -eq 1 ]]
+    then
+      # Add authentication entries to replicate to a slave.
+      echo "local   replication     all                                trust" >> $DIR/pg_hba.conf
+      echo "host    replication     all        127.0.0.1/32            trust" >> $DIR/pg_hba.conf
+      echo "host    replication     all        ::1/128                 trust" >> $DIR/pg_hba.conf
+    fi
   fi
 
   # Set all standbys to be hot standbys.
