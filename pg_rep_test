@@ -29,6 +29,13 @@ Options:
 OPTIONSDOC
 }
 
+BLUE='\e[1;94m'
+GREEN='\e[00;32m'
+RED='\e[00;31m'
+
+ENABLE_LOGS=false
+SYNCHRONOUS=false
+
 while getopts “a:d:l:Lp:r:s:S?” OPTION
 do
   case $OPTION in
@@ -65,7 +72,7 @@ done
 
 build_ascii_report()
 {
-  CURRENT_LEVEL=$X
+  CURRENT_LEVEL=$INSTANCE
 
   # Indent everything according to replication structure.
   if [[ $CURRENT_LEVEL -eq 1 ]]
@@ -105,16 +112,41 @@ build_ascii_report()
 }
 
 # Output text to a log file, prepending the date and time.
-write_log() {
+# Parameter 1 (optional): Contains 'STDOUT' if the entry should be displayed.
+write_log()
+{
+  OUTPUT=$1
+  NONEWLINE=$2
+
+  if [[ $NONEWLINE == 'NONEWLINE' ]]
+  then
+    OPTION='-n'
+  else
+    OPTION=''
+  fi
+
   while IFS= read -r LINE
   do
-    if [[ $1 == STDOUT ]]
+    if [[ $OUTPUT == STDOUT ]]
     then
-      echo $LINE
+        echo $OPTION $LINE
     fi
 
-    echo "$(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE" >> $LOG_FILE
+    echo $OPTION "$(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE" >> $LOG_FILE
   done
+}
+
+# Writes a coloured title followed by its value
+# Parameter 1: Title to be output in colour
+# Parameter 2: Value
+output_report()
+{
+  TITLE=$1
+  VALUE=$2
+
+  echo -ne "$BLUE  $TITLE: "
+  tput sgr0
+  echo $VALUE
 }
 
 IFS=","
@@ -147,6 +179,15 @@ then
   REPLICAS=1
 fi
 
+# Check that the replicas value is numeric if provided.
+if [[ -n $REPLICAS ]] && ! [[ $REPLICAS =~ ^[0-9]+$ ]]
+then
+  echo 'Error: The number of replicas must be a numeric value.'
+  exit 1
+fi
+
+INSTANCES=`expr $REPLICAS + 1`
+
 # Set default for archive directory.
 if [[ -z $ARCHIVE_DIR ]]
 then
@@ -157,13 +198,6 @@ fi
 if [[ -z $LOG_FILE ]]
 then
   LOG_FILE='/dev/null'
-fi
-
-# Check that the replicas value is numeric if provided.
-if [[ -n $REPLICAS ]] && ! [[ $REPLICAS =~ ^[0-9]+$ ]]
-then
-  echo 'Error: The number of replicas must be a numeric value.'
-  exit 1
 fi
 
 # Validate replication structure value.
@@ -236,9 +270,9 @@ fi
 if [[ -z $DIRS ]]
 then
   DIR_LIST[0]='primary'
-  for (( X=1; X <= $REPLICAS; X++ ))
+  for (( REPLICA=1; REPLICA <= $REPLICAS; REPLICA++ ))
   do
-    DIR_LIST[$X]="standby$X"
+    DIR_LIST[$REPLICA]="standby$REPLICA"
   done
 fi
 
@@ -261,12 +295,29 @@ IFS=" "
 echo "Command issued: $0 $*" > $LOG_FILE
 IFS=","
 
+echo "==== SETTINGS SUMMARY ===="
+output_report "Replicas" $REPLICAS
+output_report "Ports" "${PORT_LIST[*]}"
+output_report "Directories" "${DIR_LIST[*]}"
+output_report "Archive dir" $ARCHIVE_DIR
+output_report "Replication structure" $REPSTRUCT
+output_report "Synchronous" $SYNCHRONOUS
+output_report "Database logging" $ENABLE_LOGS
+output_report "Log flie" $LOG_FILE
+echo -e "==========================\n"
+
 # Create directories.
 for DIR in ${DIR_LIST[@]}
 do
   if ! [[ -d $DIR ]]
   then
-    mkdir -p -m 0700 $DIR
+    mkdir -p -m 0700 $DIR &>> /dev/null
+
+    if [[ $? -ne 0 ]]
+    then
+      echo "Error: Unable to create directory '$DIR'."
+      exit 1
+    fi
   fi
 done
 
@@ -279,23 +330,24 @@ mkdir -p -m 0700 $ARCHIVE_DIR
 if ! [[ -w $ARCHIVE_DIR ]]
 then
   echo "Error: The archive directory '$ARCHIVE_DIR' doesn't have write permissions."
+  exit 1
 fi
 
 # Initialise the primary and create standbys.
 
-for (( X=1; X <= ${#DIR_LIST[@]}; X++ ))
+for (( INSTANCE=1; INSTANCE <= $INSTANCES; INSTANCE++ ))
 do
-  CURRENT_STANDBY=`expr $X - 1`
+  CURRENT_STANDBY=`expr $INSTANCE - 1`
   MAX_WAL_SENDERS=0
   CHECKPOINT_SEGMENTS=3
   DIR=${DIR_LIST[$CURRENT_STANDBY]}
 
   # Create the primary and create standby from base backup of primary.
-  if [[ $X -eq 1 ]]
+  if [[ $INSTANCE -eq 1 ]]
   then
     echo -e "Creating primary in '$DIR'" | write_log STDOUT
     echo "initdb -D $DIR -E 'UTF8'" | write_log
-    initdb -D $DIR -E 'UTF8' 2>&1 >> $LOG_FILE
+    initdb -D $DIR -E 'UTF8' &>> $LOG_FILE
 
     # Reduce the resource requirements to enable a large number of standbys.
     echo "shared_buffers = 8MB" >> $DIR/postgresql.conf
@@ -343,14 +395,14 @@ do
   case $REPSTRUCT in
     fan)
       # Only the primary will be sending WAL.
-      if [[ $X -eq 1 ]]
+      if [[ $INSTANCE -eq 1 ]]
       then
         MAX_WAL_SENDERS=`expr $REPLICAS + 3`
       fi
       ;;
     tree)
       # Only the primary and 1st standby will be sending WAL.
-      case $X in
+      case $INSTANCE in
         1)
           MAX_WAL_SENDERS=3
           ;;
@@ -361,7 +413,7 @@ do
       ;;
     chain)
       # The primary and every standby except the last will be sending WAL.
-      if [[ $X -lt `expr $REPLICAS + 1` ]]
+      if [[ $INSTANCE -lt `expr $REPLICAS + 1` ]]
       then
          MAX_WAL_SENDERS=3
       fi
@@ -370,7 +422,7 @@ do
 
   # Configure to replicate.
   echo "wal_level = 'hot_standby'" >> $DIR/postgresql.conf
-  echo "port = ${PORT_LIST[`expr $X - 1`]}" >> $DIR/postgresql.conf
+  echo "port = ${PORT_LIST[$CURRENT_STANDBY]}" >> $DIR/postgresql.conf
 
   # Only set up streaming replication configuration for instances that will
   # use it.
@@ -386,7 +438,7 @@ do
   fi
 
   # Set all standbys to be hot standbys.
-  if [[ $X -ne 1 ]]
+  if [[ $INSTANCE -ne 1 ]]
   then
     echo "hot_standby = on" >> $DIR/postgresql.conf
     echo "standby_mode = 'on'" >> $DIR/recovery.conf
@@ -400,7 +452,7 @@ do
       tree)
         # Only the 1st standby subscribes directly to the primary. The rest
         # subscribe to the 1st standby.
-        case $X in
+        case $INSTANCE in
         2)
           SUBSCRIBE_PORT=${PORT_LIST[0]}
           ;;
@@ -412,16 +464,16 @@ do
       chain)
         # Every standby subscribes to the previous standby, or primary in the
         # case of the 1st standby.
-        SUBSCRIBE_PORT=${PORT_LIST[`expr $X - 2`]}
+        SUBSCRIBE_PORT=${PORT_LIST[`expr $INSTANCE - 2`]}
         ;;
     esac
     echo "primary_conninfo = 'host=127.0.0.1 port=$SUBSCRIBE_PORT application_name=standby$CURRENT_STANDBY'" >> $DIR/recovery.conf
   fi
 
   # Start the instance now that it's been configured.
-  if [[ $X -eq 1 ]]
+  if [[ $INSTANCE -eq 1 ]]
   then
-    echo "Starting primary... " | write_log STDOUT
+    echo "Starting primary... " | write_log STDOUT NONEWLINE
     echo "pg_ctl -D $DIR start" | write_log
     pg_ctl -D $DIR -s start >> $LOG_FILE
 
@@ -429,7 +481,7 @@ do
     # the primary to start serving WAL for pg_basebackup to work.
     sleep 2
   else
-    echo -e "Starting standby $CURRENT_STANDBY... " | write_log STDOUT
+    echo -e "Starting standby $CURRENT_STANDBY... " | write_log STDOUT NONEWLINE
     echo "pg_ctl -D $DIR start" | write_log
     pg_ctl -D $DIR -s start >> $LOG_FILE
   fi
@@ -439,10 +491,10 @@ do
   pg_ctl -D $DIR status | write_log
   if [[ $? -eq 0 ]]
   then
-    echo -ne "\e[00;32m" # green
+    echo -ne $GREEN # green
     echo -e "SUCCESS!\n" | write_log STDOUT
   else
-    echo -ne "\e[00;31m" # red
+    echo -ne $RED # red
     echo -e "FAILED!\n" | write_log STDOUT
   fi
   tput sgr0 # reset colours
