@@ -10,7 +10,7 @@ Usage:
   $0 [OPTION]
 
 Options:
-  -a ARCHIVEDIR          name of the archive directory (default: archive)
+  -a ARCHIVEDIR          create an archive in the named directory
   -d DIRS                comma-separated list of directory names starting with
                          primary (default: primary,standby1,standby2,...)
   -l LOGFILE             write log messages to a file, but it will not log
@@ -207,12 +207,6 @@ fi
 
 INSTANCES=`expr $REPLICAS + 1`
 
-# Set default for archive directory.
-if [[ -z $ARCHIVE_DIR ]]
-then
-  ARCHIVE_DIR='archive'
-fi
-
 # Set default for log output
 if [[ -z $LOG_FILE ]]
 then
@@ -314,11 +308,13 @@ IFS=" "
 echo "Command issued: $0 $*" > $LOG_FILE
 IFS=","
 
+# Note that a 3rd value passed to output_report here has a coalescing effect
+# where if the 2nd one is empty, the 3rd is accepted as the 2nd parameter.
 echo "==== SETTINGS SUMMARY ===="
 output_report "Replicas" $REPLICAS
 output_report "Ports" "${PORT_LIST[*]}"
 output_report "Directories" "${DIR_LIST[*]}"
-output_report "Archive dir" $ARCHIVE_DIR
+output_report "Archive dir" $ARCHIVE_DIR "[None]"
 output_report "Replication structure" $REPSTRUCT
 output_report "Synchronous" $SYNCHRONOUS
 output_report "Database logging" $ENABLE_LOGS
@@ -341,15 +337,18 @@ do
 done
 
 # Create archive directory
-mkdir -p -m 0700 $ARCHIVE_DIR
-
-# Check that the archive directory can be written to.  We can get away with
-# trying to create it first because if the directory already existed but
-# we don't have permissions to write to it, mkdir will act as if it succeeded.
-if ! [[ -w $ARCHIVE_DIR ]]
+if [[ -n $ARCHIVE_DIR ]]
 then
-  echo "Error: The archive directory '$ARCHIVE_DIR' doesn't have write permissions."
-  exit 1
+  mkdir -p -m 0700 $ARCHIVE_DIR
+
+  # Check that the archive directory can be written to.  We can get away with
+  # trying to create it first because if the directory already existed but
+  # we don't have permissions to write to it, mkdir will act as if it succeeded.
+  if ! [[ -w $ARCHIVE_DIR ]]
+  then
+    echo "Error: The archive directory '$ARCHIVE_DIR' doesn't have write permissions."
+    exit 1
+  fi
 fi
 
 # Initialise the primary and create standbys.
@@ -396,7 +395,10 @@ do
     fi
 
     echo "archive_mode = on" >> $DIR/postgresql.conf
-    echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')" >> $DIR/postgresql.conf
+    if [[ -n $ARCHIVE_DIR ]]
+    then
+      echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')" >> $DIR/postgresql.conf
+    fi
 
     # Create a copy of the config before we modify it further because the
     # remaining settings should only apply to the primary. Every standby
@@ -418,7 +420,10 @@ do
     # Restore the original copy of the config for the standby as we want a
     # pristine copy, not the primary's modified one.
     mv $DIR/postgresql.conf{.template,}
-    echo -e "$(echo restore_command = \'cp \"`readlink -f $ARCHIVE_DIR`/%f\" \"%p\"\')" >> $DIR/recovery.conf
+    if [[ -n $ARCHIVE_DIR ]]
+    then
+      echo -e "$(echo restore_command = \'cp \"`readlink -f $ARCHIVE_DIR`/%f\" \"%p\"\')" >> $DIR/recovery.conf
+    fi
   fi
 
   build_ascii_report
