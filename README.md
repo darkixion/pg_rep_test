@@ -14,7 +14,7 @@ A tool to assist with setting up replication for testing
 	                         any pre-check messages
 	  -L                     enable database logging in every instance
 	  -p PORTS               comma-separated list of ports to use starting with
-				 primary (default: 5530,5531,5532,...)
+	                         primary (default: 5530,5531,5532,...)
 	  -r REPLICAS            number of replicas to create (default: 1)
 	  -s fan|tree|chain      replication structure (default: fan)
 	                         fan = all standbys connect directly to primary
