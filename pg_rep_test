@@ -155,7 +155,7 @@ report_status()
 {
   STATUS=$1
 
-  if [[ $STATUS -eq 0 ]]
+  if [[ $STATUS -eq '0' ]] && [[ -n $STATUS ]]
   then
     echo -ne $GREEN # green
     echo -e " SUCCESS!" | write_log STDOUT
@@ -189,6 +189,13 @@ else
   BASEBACKUP_XLOG_OPTION='-x'
 fi
 
+# From PostgreSQL 9.3, initdb accepts the -N parameter which tells it not to
+# wait for files to be written to disk. We can do this as we're creating
+# disposable databases anyway.
+if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -ge 3 ]] ) || [[ PG_MAJOR_VERSION -gt 9 ]]
+then
+  INITDB_NOSYNC='-N'
+fi
 
 #### Validate parameters ####
 
@@ -363,8 +370,8 @@ do
   if [[ $INSTANCE -eq 1 ]]
   then
     echo -e "Creating primary in '$DIR'..." | write_log STDOUT NONEWLINE
-    echo "initdb -D $DIR -E 'UTF8'" | write_log
-    initdb -D $DIR -E 'UTF8' &>> $LOG_FILE
+    echo "initdb $INITDB_NOSYNC -D $DIR -E 'UTF8'" | write_log
+    initdb $INITDB_NOSYNC -D $DIR -E 'UTF8' &>> $LOG_FILE
     report_status $?
 
     if [[ $? -ne 0 ]]
@@ -403,7 +410,8 @@ do
     # remaining settings should only apply to the primary. Every standby
     # will use this copy.
     cp $DIR/postgresql.conf{,.template}
-  else
+  elif [[ $CURRENT_STANDBY -eq 1 ]]
+  then
     echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'..." | write_log STDOUT NONEWLINE
     echo "pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} $BASEBACKUP_XLOG_OPTION" | write_log
     pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} $BASEBACKUP_XLOG_OPTION &>> $LOG_FILE
@@ -415,12 +423,33 @@ do
       continue
     fi
 
+    # Remove unncessary files from standby
+    rm "$DIR"/pg_xlog/*
+
     # Restore the original copy of the config for the standby as we want a
     # pristine copy, not the primary's modified one.
     mv $DIR/postgresql.conf{.template,}
     if [[ -n $ARCHIVE_DIR ]]
     then
       echo -e "$(echo restore_command = \'cp \"`readlink -f $ARCHIVE_DIR`/%f\" \"%p\"\')" >> $DIR/recovery.conf
+    fi
+
+    # Now that we've got one base backup, we can just copy it for every remaining standby.
+    if [[ $REPLICAS -gt 1 ]]
+    then
+      for (( STANDBY=2; STANDBY<=$REPLICAS; STANDBY++ ))
+      do
+        echo -e "Creating copy of standby 1 for standby $STANDBY..." | write_log STDOUT NONEWLINE
+        echo "cp -r $DIR/. ${DIR_LIST[$STANDBY]}" | write_log
+        cp -r "$DIR/." "${DIR_LIST[$STANDBY]}"
+
+        report_status $?
+
+        if [[ $? -ne 0 ]]
+        then
+          continue
+        fi
+      done
     fi
   fi
 
@@ -515,21 +544,26 @@ do
     echo "Starting primary..." | write_log STDOUT NONEWLINE
     echo "pg_ctl -D $DIR start" | write_log
     pg_ctl -D $DIR -s start >> $LOG_FILE
-
-    # If we don't sleep here, the next standby will be set up too quickly for
-    # the primary to start serving WAL for pg_basebackup to work.
-    sleep 2
   else
     echo -e "Starting standby $CURRENT_STANDBY..." | write_log STDOUT NONEWLINE
     echo "pg_ctl -D $DIR start" | write_log
     pg_ctl -D $DIR -s start >> $LOG_FILE
   fi
 
+  # Ensure everything is flushed to disk before checking whether the service
+  # is up and running
+  sync
+
   # Test that the primary or standby has started successfully.
-  sleep 0.5
-  pg_ctl -D $DIR status | write_log
+  pg_ctl -D $DIR status >> $LOG_FILE
   report_status $?
 
+  # If the primary fails, there's no point in continuing.
+  if [[ $? -ne 0 ]] && [[ $INSTANCE -eq 1 ]]
+  then
+    echo "Error: Failed to start primary."
+    exit 1;
+  fi
 done
 
 # Output the final ASCII representation of the replication structure.
