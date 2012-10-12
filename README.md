@@ -1,7 +1,7 @@
 pg_rep_test
 ===========
 
-A tool to assist with setting up replication for testing
+A tool to assist with setting up replication in PostgreSQL 9.1+ for the purposes of testing or demonstration.
 
 	Usage:
 	  pg_rep_test [OPTION]
