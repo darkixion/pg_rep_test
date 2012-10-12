@@ -237,7 +237,7 @@ then
 fi
 
 # Ensure that if a list of ports has been provided, the number of ports equals
-# the number of replicas.
+# the number of replicas plus the primary.
 if [[ -n $REPLICAS ]] && [[ -n $PORTS ]] && [[ ${#PORT_LIST[@]} -ne `expr $REPLICAS + 1` ]]
 then
   echo 'Error: The number of ports provided does not match the number of replicas + primary.'
@@ -357,7 +357,6 @@ for (( INSTANCE=1; INSTANCE <= $INSTANCES; INSTANCE++ ))
 do
   CURRENT_STANDBY=`expr $INSTANCE - 1`
   MAX_WAL_SENDERS=0
-  CHECKPOINT_SEGMENTS=3
   DIR=${DIR_LIST[$CURRENT_STANDBY]}
 
   # Create the primary and create standby from base backup of primary.
@@ -406,8 +405,7 @@ do
     cp $DIR/postgresql.conf{,.template}
   else
     echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'..." | write_log STDOUT NONEWLINE
-    PG_BASEBACKUP="pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} $BASEBACKUP_XLOG_OPTION"
-    echo $PG_BASEBACKUP | write_log
+    echo "pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} $BASEBACKUP_XLOG_OPTION" | write_log
     pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} $BASEBACKUP_XLOG_OPTION &>> $LOG_FILE
 
     report_status $?
@@ -514,7 +512,7 @@ do
   # Start the instance now that it's been configured.
   if [[ $INSTANCE -eq 1 ]]
   then
-    echo "Starting primary... " | write_log STDOUT NONEWLINE
+    echo "Starting primary..." | write_log STDOUT NONEWLINE
     echo "pg_ctl -D $DIR start" | write_log
     pg_ctl -D $DIR -s start >> $LOG_FILE
 
@@ -522,7 +520,7 @@ do
     # the primary to start serving WAL for pg_basebackup to work.
     sleep 2
   else
-    echo -e "Starting standby $CURRENT_STANDBY... " | write_log STDOUT NONEWLINE
+    echo -e "Starting standby $CURRENT_STANDBY..." | write_log STDOUT NONEWLINE
     echo "pg_ctl -D $DIR start" | write_log
     pg_ctl -D $DIR -s start >> $LOG_FILE
   fi
