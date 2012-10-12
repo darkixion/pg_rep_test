@@ -329,21 +329,17 @@ output_report "Log flie" $LOG_FILE
 echo -e "==========================\n"
 
 # Create directories.
-for DIR in ${DIR_LIST[@]}
-do
-  if ! [[ -d $DIR ]]
-  then
-    mkdir -p -m 0700 $DIR &>> /dev/null
+mkdir -p -m 0700 ${DIR_LIST[@]} &>> /dev/null
 
-    if [[ $? -ne 0 ]]
-    then
-      echo "Error: Unable to create directory '$DIR'."
-      exit 1
-    fi
-  else
-    chmod 0700 $DIR
-  fi
-done
+if [[ $? -ne 0 ]]
+then
+  echo "Error: Unable to create directory '$DIR'."
+  exit 1
+fi
+
+# If the directory already existed, the permissions may not be correct
+# so apply what's necessary for a database cluster.
+chmod 0700 ${DIR_LIST[@]} &>> /dev/null
 
 # Create archive directory
 if [[ -n $ARCHIVE_DIR ]]
@@ -383,11 +379,11 @@ do
     fi
 
     # Reduce the resource requirements to enable a large number of standbys.
-    echo "shared_buffers = 8MB" >> $DIR/postgresql.conf
+    echo "shared_buffers = 8MB" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
 
     if $ENABLE_LOGS
     then
-      echo "logging_collector = on" >> $DIR/postgresql.conf
+      echo "logging_collector = on" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
     fi
 
     # Define list of standbys.  We want to set this up in the primary prior to
@@ -399,19 +395,20 @@ do
       do
         SYNC_STANDBY_LIST=$SYNC_STANDBY_LIST",standby$SYNC_STANDBY"
       done
-        echo "synchronous_standby_names = '$SYNC_STANDBY_LIST'" >> $DIR/postgresql.conf
+        echo "synchronous_standby_names = '$SYNC_STANDBY_LIST'" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
     fi
 
-    echo "archive_mode = on" >> $DIR/postgresql.conf
+    echo "archive_mode = on" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
     if [[ -n $ARCHIVE_DIR ]]
     then
-      echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')" >> $DIR/postgresql.conf
+      echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
     fi
 
     # Create a copy of the config before we modify it further because the
     # remaining settings should only apply to the primary. Every standby
     # will use this copy.
-    cp $DIR/postgresql.conf{,.template}
+    echo "cp $DIR/postgresql.conf{,.template}" | write_log
+    cp $DIR/postgresql.conf{,.template} 2>> $LOG_FILE
   elif [[ $CURRENT_STANDBY -eq 1 ]]
   then
     echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'..." | write_log STDOUT NONEWLINE
@@ -433,7 +430,7 @@ do
     mv $DIR/postgresql.conf{.template,}
     if [[ -n $ARCHIVE_DIR ]]
     then
-      echo -e "$(echo restore_command = \'cp \"`readlink -f $ARCHIVE_DIR`/%f\" \"%p\"\')" >> $DIR/recovery.conf
+      echo -e "$(echo restore_command = \'cp \"`readlink -f $ARCHIVE_DIR`/%f\" \"%p\"\')" 2>> $LOG_FILE 1>> $DIR/recovery.conf
     fi
 
     # Now that we've got one base backup, we can just copy it for every remaining standby.
@@ -443,7 +440,7 @@ do
       do
         echo -e "Creating copy of standby 1 for standby $STANDBY..." | write_log STDOUT NONEWLINE
         echo "cp -r $DIR/. ${DIR_LIST[$STANDBY]}" | write_log
-        cp -r "$DIR/." "${DIR_LIST[$STANDBY]}"
+        cp -r "$DIR/." "${DIR_LIST[$STANDBY]}" 2>> $LOG_FILE
 
         report_status $?
 
@@ -488,31 +485,31 @@ do
   esac
 
   # Configure to replicate.
-  echo "wal_level = 'hot_standby'" >> $DIR/postgresql.conf
-  echo "port = ${PORT_LIST[$CURRENT_STANDBY]}" >> $DIR/postgresql.conf
+  echo "wal_level = 'hot_standby'" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+  echo "port = ${PORT_LIST[$CURRENT_STANDBY]}" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
 
   # Only set up streaming replication configuration for instances that will
   # use it.
   if [[ $MAX_WAL_SENDERS > 0 ]]
   then
-    echo "max_wal_senders = $MAX_WAL_SENDERS" >> $DIR/postgresql.conf
-    echo "wal_keep_segments = 32" >> $DIR/postgresql.conf
+    echo "max_wal_senders = $MAX_WAL_SENDERS" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+    echo "wal_keep_segments = 32" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
 
     if [[ $INSTANCE -eq 1 ]]
     then
       # Add authentication entries to replicate to a slave.
-      echo "local   replication     all                                trust" >> $DIR/pg_hba.conf
-      echo "host    replication     all        127.0.0.1/32            trust" >> $DIR/pg_hba.conf
-      echo "host    replication     all        ::1/128                 trust" >> $DIR/pg_hba.conf
+      echo "local   replication     all                                trust" 2>> $LOG_FILE 1>> $DIR/pg_hba.conf
+      echo "host    replication     all        127.0.0.1/32            trust" 2>> $LOG_FILE 1>> $DIR/pg_hba.conf
+      echo "host    replication     all        ::1/128                 trust" 2>> $LOG_FILE 1>> $DIR/pg_hba.conf
     fi
   fi
 
   # Set all standbys to be hot standbys.
   if [[ $INSTANCE -ne 1 ]]
   then
-    echo "hot_standby = on" >> $DIR/postgresql.conf
-    echo "standby_mode = 'on'" >> $DIR/recovery.conf
-    echo "recovery_target_timeline = 'latest'" >> $DIR/recovery.conf
+    echo "hot_standby = on" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+    echo "standby_mode = 'on'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
+    echo "recovery_target_timeline = 'latest'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
 
     case $REPSTRUCT in
       fan)
@@ -537,7 +534,7 @@ do
         SUBSCRIBE_PORT=${PORT_LIST[`expr $INSTANCE - 2`]}
         ;;
     esac
-    echo "primary_conninfo = 'host=127.0.0.1 port=$SUBSCRIBE_PORT application_name=standby$CURRENT_STANDBY'" >> $DIR/recovery.conf
+    echo "primary_conninfo = 'host=127.0.0.1 port=$SUBSCRIBE_PORT application_name=standby$CURRENT_STANDBY'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
   fi
 
   # Start the instance now that it's been configured.
