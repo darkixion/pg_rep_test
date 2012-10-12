@@ -340,6 +340,8 @@ do
       echo "Error: Unable to create directory '$DIR'."
       exit 1
     fi
+  else
+    chmod 0700 $DIR
   fi
 done
 
