@@ -180,15 +180,6 @@ then
   exit 1
 fi
 
-# From PostgreSQL 9.2, the -X parameter on pg_basebackup is supported. Prior to
-# that we have to use -x.
-if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -ge 2 ]] ) || [[ PG_MAJOR_VERSION -gt 9 ]]
-then
-  BASEBACKUP_XLOG_OPTION='-Xstream'
-else
-  BASEBACKUP_XLOG_OPTION='-x'
-fi
-
 # From PostgreSQL 9.3, initdb accepts the -N parameter which tells it not to
 # wait for files to be written to disk. We can do this as we're creating
 # disposable databases anyway.
@@ -412,8 +403,8 @@ do
   elif [[ $CURRENT_STANDBY -eq 1 ]]
   then
     echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'..." | write_log STDOUT NONEWLINE
-    echo "pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} $BASEBACKUP_XLOG_OPTION" | write_log
-    pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} $BASEBACKUP_XLOG_OPTION &>> $LOG_FILE
+    echo "pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]}" | write_log
+    pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} &>> $LOG_FILE
 
     report_status $?
 
@@ -421,9 +412,6 @@ do
     then
       continue
     fi
-
-    # Remove unncessary files from standby
-    rm "$DIR"/pg_xlog/*
 
     # Restore the original copy of the config for the standby as we want a
     # pristine copy, not the primary's modified one.
