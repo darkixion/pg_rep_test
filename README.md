@@ -53,7 +53,7 @@ configuration they were created in and the port numbers used:
 	            ---[Standby 5 (5535)]
 
 
-## Licence
+## License
 
 pg_rep_test is licensed under
 `The PostgreSQL License <http://www.opensource.org/licenses/postgresql>`_,
