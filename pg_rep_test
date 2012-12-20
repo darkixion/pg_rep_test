@@ -389,9 +389,9 @@ do
         echo "synchronous_standby_names = '$SYNC_STANDBY_LIST'" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
     fi
 
-    echo "archive_mode = on" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
     if [[ -n $ARCHIVE_DIR ]]
     then
+      echo "archive_mode = on" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
       echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
     fi
 
