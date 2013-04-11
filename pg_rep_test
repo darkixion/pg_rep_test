@@ -29,9 +29,13 @@ Options:
 OPTIONSDOC
 }
 
-BLUE='\e[1;94m'
-GREEN='\e[1;32m'
-RED='\e[1;31m'
+if [ -t 1 ]
+then
+  BLUE='\e[1;94m'
+  GREEN='\e[1;32m'
+  RED='\e[1;31m'
+  PLAIN=$(tput sgr0)
+fi
 
 ENABLE_LOGS=false
 SYNCHRONOUS=false
@@ -144,8 +148,7 @@ output_report()
   TITLE=$1
   VALUE=$2
 
-  echo -ne "$BLUE  $TITLE: "
-  tput sgr0
+  echo -ne "$BLUE  $TITLE: $PLAIN"
   echo $VALUE
 }
 
@@ -163,7 +166,7 @@ report_status()
     echo -ne $RED # red
     echo -e " FAILED!" | write_log STDOUT
   fi
-  tput sgr0 # reset colours
+  echo $PLAIN # reset colours
 
   return $STATUS
 }
