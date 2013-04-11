@@ -333,7 +333,7 @@ fi
 DIR_LIST=(${DIR_LIST[*]:-${AUTO_DIR_LIST[@]}})
 ENABLE_LOGS=${ENABLE_LOGS:-false}
 PORT_LIST=(${PORT_LIST[*]:-${AUTO_PORT_LIST[@]}})
-REPSTRUCT=${REPSTRUCT:-'chain'}
+REPSTRUCT=${REPSTRUCT:-'fan'}
 SYNCHRONOUS=${SYNCHRONOUS:-false}
 
 #### Set up instances ####
