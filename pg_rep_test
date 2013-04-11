@@ -29,6 +29,7 @@ Options:
 OPTIONSDOC
 }
 
+# Configure colour variables if outputting to the terminal
 if [ -t 1 ]
 then
   BLUE='\e[1;94m'
@@ -36,9 +37,6 @@ then
   RED='\e[1;31m'
   PLAIN=$(tput sgr0)
 fi
-
-ENABLE_LOGS=false
-SYNCHRONOUS=false
 
 while getopts “a:d:l:Lp:r:s:S?” OPTION
 do
@@ -73,6 +71,41 @@ do
       ;;
   esac
 done
+
+generate_ports()
+{
+  AUTO_PORT_LIST=()
+  for (( PORT=5530, PORT_COUNT=0; PORT_COUNT <= $REPLICAS; PORT++ ))
+  do
+    if lsof -i:$PORT > /dev/null
+    then
+      continue; # port in use, so try next one
+    else
+      AUTO_PORT_LIST+=($PORT)
+      PORT_COUNT=$[PORT_COUNT + 1];
+    fi
+  done
+}
+
+generate_dirs()
+{
+  while [[ $(ls -A "primary"${SUBSET:+'_'$SUBSET} 2> /dev/null) ]]
+  do
+    ((SUBSET++))
+  done
+  AUTO_DIR_LIST[0]="primary"${SUBSET:+'_'$SUBSET}
+  unset SUBSET
+
+  for (( REPLICA=1; REPLICA <= $REPLICAS; REPLICA++ ))
+  do
+    while [[ $(ls -A "standby$REPLICA"${SUBSET:+'_'$SUBSET} 2> /dev/null) ]]
+    do
+      ((SUBSET++))
+    done
+    AUTO_DIR_LIST[$REPLICA]="standby$REPLICA"${SUBSET:+'_'$SUBSET}
+    unset SUBSET
+  done
+}
 
 build_ascii_report()
 {
@@ -224,8 +257,6 @@ then
       echo 'Error: Invalid replica structure specified.'
       exit 1
   esac
-else
-  REPSTRUCT='fan'
 fi
 
 # Throw an error if any attempt to use a cascading replication feature prior to
@@ -248,28 +279,19 @@ fi
 # If a list of ports hasn't been specified, generate the list of ports.
 if [[ -z $PORTS ]]
 then
-  PORT_LIST=()
-  for (( PORT=5530, PORT_COUNT=0; PORT_COUNT <= $REPLICAS; PORT++ ))
-  do
-    if lsof -i:$PORT > /dev/null
-    then
-      continue; # port in use, so try next one
-    else
-      PORT_LIST+=($PORT)
-      PORT_COUNT=$[PORT_COUNT + 1];
-    fi
-  done
+  generate_ports
 else
   # Check that the ports listed aren't already in use.
   for PORT in ${PORT_LIST[@]}
   do
     if lsof -i:$PORT > /dev/null
     then
-      echo "Error: Port $PORT already in use.  Specify a list of unused ports with the -p option."
+      echo "Error: Port $PORT already in use.  Specify a list of unused ports with the -p option, or omit this parameter to auto-select ports."
       exit 1
     fi
   done
 fi
+
 
 # Check that the number of directories is equal to the number of standbys plus
 # the primary.
@@ -283,25 +305,36 @@ fi
 # directory names.
 if [[ -z $DIRS ]]
 then
-  DIR_LIST[0]='primary'
-  for (( REPLICA=1; REPLICA <= $REPLICAS; REPLICA++ ))
+  generate_dirs
+else
+  # Check each directory to see if it's empty if it already exists.
+  for DIR in ${DIR_LIST[@]}
   do
-    DIR_LIST[$REPLICA]="standby$REPLICA"
+    # Check for duplicate directory names in supplied list
+    if [[ `echo ${DIR_LIST[*]} | grep -o $DIR | wc -l` -gt 1 ]]
+    then
+       echo "Error: The directory '$DIR' is specified more than once in the provided list."
+       exit 1
+    fi
+
+    if [[ -d $DIR ]]
+    then
+      if [[ $(ls -A $DIR) ]]
+      then
+        echo "Error: The directory '$DIR' already exists and is not empty."
+        exit 1
+      fi
+    fi
   done
 fi
 
-# Check each directory to see if it's empty if it already exists.
-for DIR in ${DIR_LIST[@]}
-do
-  if [[ -d $DIR ]]
-  then
-    if [[ $(ls -A $DIR) ]]
-    then
-      echo "Error: The directory '$DIR' already exists and is not empty."
-      exit 1
-    fi
-  fi
-done
+# Set default values where necessary
+
+DIR_LIST=(${DIR_LIST[*]:-${AUTO_DIR_LIST[@]}})
+ENABLE_LOGS=${ENABLE_LOGS:-false}
+PORT_LIST=(${PORT_LIST[*]:-${AUTO_PORT_LIST[@]}})
+REPSTRUCT=${REPSTRUCT:-'chain'}
+SYNCHRONOUS=${SYNCHRONOUS:-false}
 
 #### Set up instances ####
 
@@ -429,7 +462,7 @@ do
     then
       for (( STANDBY=2; STANDBY<=$REPLICAS; STANDBY++ ))
       do
-        echo -e "Creating copy of standby 1 for standby $STANDBY..." | write_log STDOUT NONEWLINE
+        echo -e "Creating copy of standby 1 for standby $STANDBY in '${DIR_LIST[$STANDBY]}'..." | write_log STDOUT NONEWLINE
         echo "cp -r $DIR/. ${DIR_LIST[$STANDBY]}" | write_log
         cp -r "$DIR/." "${DIR_LIST[$STANDBY]}" 2>> $LOG_FILE
 

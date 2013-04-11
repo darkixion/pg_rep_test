@@ -53,6 +53,16 @@ configuration they were created in and the port numbers used:
 	            ---[Standby 5 (5535)]
 
 
+## Notes
+
+You can run pg_rep_test without any parameters which will then just create a primary
+with a single standby.
+
+If a list of ports isn't specified, it will use a list of unused ports starting from
+5530.  If a port is in use, the next port will be checked and so on, until every
+instance has a port it can use.
+
+
 ## License
 
 pg_rep_test is licensed under The PostgreSQL License
