@@ -92,6 +92,10 @@ with a single standby.</p>
 5530.  If a port is in use, the next port will be checked and so on, until every
 instance has a port it can use.</p>
 
+<p>All configuration changes that pg_rep_test makes get put into a separate
+configuration file called custom.conf.  This is then referenced by postgresql.conf
+using an 'include' directive at the end of the file.</p>
+
 <h2>License</h2>
 
 <p>pg_rep_test is licensed under The PostgreSQL License
