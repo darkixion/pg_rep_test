@@ -30,7 +30,7 @@ A tool to assist with setting up replication in PostgreSQL 9.1+ for the purposes
 To create 5 standbys, the first one connecting to the primary, and the rest connecting
 to the first standby, you would run the following:
 
-`./pg_rep_test -r 5 -s tree`
+	./pg_rep_test -r 5 -s tree
 
 This would create a directory named "primary", and 5 directories named
 "standby1", "standby2"... "standby5".  Each standby would be configured
