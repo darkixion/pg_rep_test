@@ -405,12 +405,17 @@ do
       exit 1
     fi
 
+    # Add an include to pull in the custom configuration contained in
+    # custom.conf.
+    echo "include 'custom.conf'" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+    echo -e "# This file contains custom configuration changes made by pg_rep_test\n" 2>> $LOG_FILE 1>>$DIR/custom.conf
+
     # Reduce the resource requirements to enable a large number of standbys.
-    echo "shared_buffers = 8MB" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+    echo -e "shared_buffers = 8MB       # This is set low to allow a large number of standbys to be set up\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
     if $ENABLE_LOGS
     then
-      echo "logging_collector = on" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+      echo -e "logging_collector = on\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
     fi
 
     # Define list of standbys.  We want to set this up in the primary prior to
@@ -422,20 +427,20 @@ do
       do
         SYNC_STANDBY_LIST=$SYNC_STANDBY_LIST",standby$SYNC_STANDBY"
       done
-        echo "synchronous_standby_names = '$SYNC_STANDBY_LIST'" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+        echo -e "synchronous_standby_names = '$SYNC_STANDBY_LIST'\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
     fi
 
     if [[ -n $ARCHIVE_DIR ]]
     then
-      echo "archive_mode = on" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
-      echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+      echo -e "archive_mode = on\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
+      echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
     fi
 
-    # Create a copy of the config before we modify it further because the
-    # remaining settings should only apply to the primary. Every standby
-    # will use this copy.
-    echo "cp $DIR/postgresql.conf{,.template}" | write_log
-    cp $DIR/postgresql.conf{,.template} 2>> $LOG_FILE
+    # Create a copy of the custom config before we modify it further
+    # because the remaining settings should only apply to the primary.
+    # Every standby will use this copy.
+    echo "cp $DIR/custom.conf{,.template}" | write_log
+    cp $DIR/custom.conf{,.template} 2>> $LOG_FILE
   elif [[ $CURRENT_STANDBY -eq 1 ]]
   then
     echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'..." | write_log STDOUT NONEWLINE
@@ -449,9 +454,9 @@ do
       continue
     fi
 
-    # Restore the original copy of the config for the standby as we want a
-    # pristine copy, not the primary's modified one.
-    mv $DIR/postgresql.conf{.template,}
+    # Restore the copy of the config for the standby as we want a
+    # copy without any primary-specific modifications.
+    mv $DIR/custom.conf{.template,}
     if [[ -n $ARCHIVE_DIR ]]
     then
       echo -e "$(echo restore_command = \'cp \"`readlink -f $ARCHIVE_DIR`/%f\" \"%p\"\')" 2>> $LOG_FILE 1>> $DIR/recovery.conf
@@ -509,15 +514,16 @@ do
   esac
 
   # Configure to replicate.
-  echo "wal_level = 'hot_standby'" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
-  echo "port = ${PORT_LIST[$CURRENT_STANDBY]}" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+  echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can be connected to\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
+  echo -e "port = ${PORT_LIST[$CURRENT_STANDBY]}\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
   # Only set up streaming replication configuration for instances that will
   # use it.
   if [[ $MAX_WAL_SENDERS > 0 ]]
   then
-    echo "max_wal_senders = $MAX_WAL_SENDERS" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
-    echo "wal_keep_segments = 32" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+    echo -e "max_wal_senders = $MAX_WAL_SENDERS        # This is set to number of subscribing standbys + 1.  This then allows use\n" \
+         "                          # of tools like pg_basebackup that also uses streaming replication.\n"  2>> $LOG_FILE 1>> $DIR/custom.conf
+    echo "wal_keep_segments = 32" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
     if [[ $INSTANCE -eq 1 ]]
     then
@@ -531,7 +537,7 @@ do
   # Set all standbys to be hot standbys.
   if [[ $INSTANCE -ne 1 ]]
   then
-    echo "hot_standby = on" 2>> $LOG_FILE 1>> $DIR/postgresql.conf
+    echo "hot_standby = on           # Needed to allow connection to this standby" 2>> $LOG_FILE 1>> $DIR/custom.conf
     echo "standby_mode = 'on'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
     echo "recovery_target_timeline = 'latest'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
 
