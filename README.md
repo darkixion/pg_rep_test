@@ -62,7 +62,7 @@ If a list of ports isn't specified, it will use a list of unused ports starting 
 5530.  If a port is in use, the next port will be checked and so on, until every
 instance has a port it can use.
 
-All configurtion changes that pg_rep_test makes get put into a separate
+All configuration changes that pg_rep_test makes get put into a separate
 configuration file called custom.conf.  This is then referenced by postgresql.conf
 using an 'include' directive at the end of the file.
 
