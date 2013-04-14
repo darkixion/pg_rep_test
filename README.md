@@ -23,7 +23,7 @@ A tool to assist with setting up replication in PostgreSQL 9.1+ for the purposes
 	                         chain = no more than one standby connects to any node
 	  -S                     configures all standbys to be synchronous
 	  -T                     don't generate management tool script file to manage the
-                                 new instances
+	                         new instances
 	  -?                     show this help then exit
 
 
