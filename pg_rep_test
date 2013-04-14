@@ -11,7 +11,7 @@ Usage:
 
 Options:
   -a ARCHIVEDIR          create an archive in the named directory
-  -d DIRS                comma-separated list of directory names starting with
+  -d DATADIRS                comma-separated list of directory names starting with
                          primary (default: primary,standby1,standby2,...)
   -l LOGFILE             write log messages to a file, but it will not log
                          any pre-check messages
@@ -25,6 +25,8 @@ Options:
                                 remaining ones connect to that standby
                          chain = no more than one standby connects to any node
   -S                     configures all standbys to be synchronous
+  -T                     don't generate management tool script file to manage the
+                         new instances
   -?                     show this help then exit
 OPTIONSDOC
 }
@@ -35,17 +37,18 @@ then
   BLUE='\e[1;94m'
   GREEN='\e[1;32m'
   RED='\e[1;31m'
+  YELLOW='\e[1;93m'
   PLAIN=$(tput sgr0)
 fi
 
-while getopts “a:d:l:Lp:r:s:S?” OPTION
+while getopts “a:d:l:Lp:r:s:ST?” OPTION
 do
   case $OPTION in
     a)
       ARCHIVE_DIR=$OPTARG
       ;;
     d)
-      DIRS=$OPTARG
+      DATADIRS=$OPTARG
       ;;
     l)
       LOG_FILE=$OPTARG
@@ -64,6 +67,9 @@ do
       ;;
     S)
       SYNCHRONOUS=true
+      ;;
+    T)
+      TOOL=false
       ;;
     ?)
       usage
@@ -194,19 +200,288 @@ report_status()
   if [[ $STATUS -eq '0' ]] && [[ -n $STATUS ]]
   then
     echo -ne $GREEN # green
-    echo -e " SUCCESS!" | write_log STDOUT
+    echo -e " SUCCESS!" | write_log STDOUT NONEWLINE
   else
     echo -ne $RED # red
-    echo -e " FAILED!" | write_log STDOUT
+    echo -e " FAILED!" | write_log STDOUT NONEWLINE
   fi
   echo $PLAIN # reset colours
 
   return $STATUS
 }
 
+
+
+
+########## CREATE TOOL CODE BEGIN  ##########
+
+create_tool()
+{
+FILE_HEADER=$(cat <<TOOL_CONFIG
+#!/bin/bash
+
+# instance data associated with this maintenance script
+DATADIRS=(${DIR_LIST[*]})
+PORTS=(${PORT_LIST[*]})
+TOOL_CONFIG
+)
+
+FILE_BODY=$(cat <<'TOOL_FILE'
+usage()
+{
+cat << OPTIONSDOC
+Usage:
+  $0 [OPTION] [ACTION]
+
+Options:
+  -D DATADIRS            comma-separated list of directories of instances
+                         to affect
+  -m MODE                shutdown mode (smart, fast or immediate); must be
+                         used with the 'stop' action
+  -l LOGFILE             write log messages to a file
+  -?                     show this help then exit
+
+ACTION can be one of:
+  status                 shows a list of all managed instances, their ports
+                         and data directories
+  start                  start all or specified instances
+  stop                   stops all or specified instances, which can be used
+                         with the -m option
+  restart                restart all or specified instances
+  destroy                stops (if started) and deletes all or specified
+                         instances; also deletes this maintenance script
+OPTIONSDOC
+}
+
+# Configure colour variables if outputting to the terminal
+if [ -t 1 ]
+then
+  BLUE='\e[1;94m'
+  GREEN='\e[1;32m'
+  RED='\e[1;31m'
+  PLAIN=$(tput sgr0)
+fi
+
+IFS=','
+
+while getopts “D:m:l:?” OPTION
+do
+  case $OPTION in
+    D)
+      DATADIRS=($OPTARG)
+      ;;
+    m)
+      MODE=$OPTARG
+      ;;
+    l)
+      LOG_FILE=$OPTARG
+      ;;
+    ?)
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+ACTION=${!#}
+MODE=${MODE:-'smart'}
+
+# Set default for log output
+if [[ -z $LOG_FILE ]]
+then
+  LOG_FILE='/dev/null'
+fi
+
+# Output text to a log file, prepending the date and time.
+# Parameter 1 (optional): Contains 'STDOUT' if the entry should be displayed.
+write_log()
+{
+  OUTPUT=$1
+  NONEWLINE=$2
+
+  if [[ $NONEWLINE == 'NONEWLINE' ]]
+  then
+    OPTION='-n'
+  else
+    OPTION=''
+  fi
+
+  while IFS= read -r LINE
+  do
+    if [[ $OUTPUT == STDOUT ]]
+    then
+        echo $OPTION $LINE
+    fi
+
+    echo $(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE >> $LOG_FILE
+  done
+}
+
+# Based on the status provided, reports SUCCESS or FAILED
+# Parameter 1: The exit code of the process being reported
+report_status()
+{
+  STATUS=$1
+
+  if [[ $STATUS -eq '0' ]] && [[ -n $STATUS ]]
+  then
+    echo -ne $GREEN # green
+    echo -e ' SUCCESS!' | write_log STDOUT NONEWLINE
+  else
+    echo -ne $RED # red
+    echo -e ' FAILED!' | write_log STDOUT NONEWLINE
+  fi
+  echo $PLAIN # reset colours
+
+  return $STATUS
+}
+
+status()
+{
+  for (( I=0; I < ${#DATADIRS[@]}; I++ ))
+  do
+    echo -n "Instance '${DATADIRS[$I]}' on port [${PORTS[$I]}]: "
+    echo "pg_ctl status -D ${DATADIRS[$I]}" | write_log
+    pg_ctl status -D ${DATADIRS[$I]} >> $LOG_FILE
+    case $? in
+      0)
+        echo -e $GREEN'RUNNING'$PLAIN
+        ;;
+      3)
+        echo -e $RED'NOT RUNNING'$PLAIN
+        ;;
+    esac
+  done
+}
+
+destroy()
+{
+  for INSTANCE in ${DATADIRS[@]}
+  do
+    pg_ctl -D $INSTANCE status >> $LOG_FILE
+    if [[ $? -eq '0' ]]
+    then
+      echo -e "Stopping instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
+      echo 'pg_ctl stop -D '$INSTANCE' -m immediate' | write_log
+      pg_ctl stop -D $INSTANCE -m immediate &>> $LOG_FILE
+      sync
+      echo "pg_ctl status -D $INSTANCE" | write_log
+      pg_ctl status -D $INSTANCE >> $LOG_FILE
+      if [[ $? -eq '3' ]]
+      then
+        report_status '0'
+      fi
+    else
+      echo "Instance in '$INSTANCE' already stopped." | write_log STDOUT
+    fi
+
+    echo -e "Deleting instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
+    echo 'rm -r '$INSTANCE'/*' | write_log
+    rm -r $INSTANCE/* &>> $LOG_FILE
+    echo 'rmdir '$INSTANCE | write_log
+    rmdir $INSTANCE &>> $LOG_FILE
+    report_status $?
+  done
+  rm $0
+}
+
+start()
+{
+  for INSTANCE in ${DATADIRS[@]}
+  do
+    pg_ctl -D $INSTANCE status >> $LOG_FILE
+    if [[ $? -ne '0' ]]
+    then
+      echo -e "Starting instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
+      echo 'pg_ctl start -D '$INSTANCE | write_log
+      pg_ctl start -D $INSTANCE &>> $LOG_FILE
+      sync
+      echo "pg_ctl status -D $INSTANCE" | write_log
+      pg_ctl status -D $INSTANCE >> $LOG_FILE
+      report_status $?
+    else
+      echo "Instance in '$INSTANCE' already started." | write_log STDOUT
+    fi
+  done
+}
+
+stop()
+{
+  for INSTANCE in ${DATADIRS[@]}
+  do
+    pg_ctl -D $INSTANCE status >> $LOG_FILE
+    if [[ $? -eq '0' ]]
+    then
+      echo -e "Stopping instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
+      echo 'pg_ctl stop -D '$INSTANCE' -m '$MODE | write_log
+      pg_ctl stop -D $INSTANCE -m $MODE &>> $LOG_FILE
+      report_status $?
+    else
+      echo "Instance in '$INSTANCE' already stopped." | write_log STDOUT
+    fi
+  done
+}
+
+restart()
+{
+  for INSTANCE in ${DATADIRS[@]}
+  do
+      echo -e "Restarting instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
+      echo 'pg_ctl restart -D '$INSTANCE | write_log
+      pg_ctl restart -D $INSTANCE &>> $LOG_FILE
+      sync
+      echo "pg_ctl status -D $INSTANCE" | write_log
+      pg_ctl status -D $INSTANCE >> $LOG_FILE
+      report_status $?
+  done
+}
+
+case $ACTION in
+  destroy)
+    destroy
+    ;;
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  restart)
+    restart
+    ;;
+  status)
+    status
+    ;;
+  * )
+    echo 'Error: Invalid action '$ACTION' specified.'
+    exit 1
+esac
+TOOL_FILE
+)
+
+while [[ $(ls -A "tool"${SUBSET:+$SUBSET}".pg_rep_test" 2> /dev/null) ]]
+do
+  ((SUBSET++))
+done
+TOOL_FILENAME="tool"${SUBSET:+'_'$SUBSET}".pg_rep_test"
+unset SUBSET
+
+echo $FILE_HEADER > $TOOL_FILENAME
+echo $FILE_BODY >> $TOOL_FILENAME
+chmod u+x $TOOL_FILENAME
+
+echo -e "The maintenance tool script for these instances is '$TOOL_FILENAME'." | write_log STDOUT
+echo -e "Run $YELLOW./$TOOL_FILENAME -?$PLAIN for help with using it." | write_log STDOUT
+}
+
+########## CREATE TOOL CODE END  ##########
+
+
+
+
 IFS=","
 PORT_LIST=($PORTS)
-DIR_LIST=($DIRS)
+DIR_LIST=($DATADIRS)
 
 # Check that we're using a supported version
 if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -eq 0 ]] ) || [[ PG_MAJOR_VERSION -lt 9 ]]
@@ -295,7 +570,7 @@ fi
 
 # Check that the number of directories is equal to the number of standbys plus
 # the primary.
-if [[ -n $REPLICAS ]] && [[ -n $DIRS ]] && [[ ${#DIR_LIST[@]} -ne `expr $REPLICAS + 1` ]]
+if [[ -n $REPLICAS ]] && [[ -n $DATADIRS ]] && [[ ${#DIR_LIST[@]} -ne `expr $REPLICAS + 1` ]]
 then
   echo 'Error: The number of directories provided does not match a primary + the number of replicas.'
   exit 1
@@ -303,7 +578,7 @@ fi
 
 # If a list of directories was not explicitly specified, generate the default
 # directory names.
-if [[ -z $DIRS ]]
+if [[ -z $DATADIRS ]]
 then
   generate_dirs
 else
@@ -597,5 +872,10 @@ done
 
 # Output the final ASCII representation of the replication structure.
 echo -e $ASCII_REPORT
+
+if [[ -z $TOOL ]]
+then
+  create_tool
+fi
 
 exit 1
