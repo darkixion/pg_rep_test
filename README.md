@@ -22,6 +22,8 @@ A tool to assist with setting up replication in PostgreSQL 9.1+ for the purposes
 	                                remaining ones connect to that standby
 	                         chain = no more than one standby connects to any node
 	  -S                     configures all standbys to be synchronous
+	  -T                     don't generate management tool script file to manage the
+                                 new instances
 	  -?                     show this help then exit
 
 
@@ -65,6 +67,67 @@ instance has a port it can use.
 All configuration changes that pg_rep_test makes get put into a separate
 configuration file called custom.conf.  This is then referenced by postgresql.conf
 using an 'include' directive at the end of the file.
+
+A maintenance tool script is generated automatically after creating a set of
+instances (unless suppressed with -T).  The following section describes its use.
+
+
+tool(_n).pg_rep_test
+================
+
+A maintenance tool script to manage sets of instances created by pg_rep_test.
+The name of the tool is unique to a set of instances.
+
+	Usage:
+	  ./tool.pg_rep_test [OPTION] [ACTION]
+
+	Options:
+	  -D DATADIRS            comma-separated list of directories of instances
+	                         to affect
+	  -m MODE                shutdown mode (smart  fast or immediate); must be
+	                         used with the 'stop' action
+	  -l LOGFILE             write log messages to a file
+	  -?                     show this help then exit
+
+	ACTION can be one of:
+	  status                 shows a list of all managed instances  their ports
+	                         and data directories
+	  start                  start all or specified instances
+	  stop                   stops all or specified instances  which can be used
+	                         with the -m option
+	  restart                restart all or specified instances
+	  destroy                stops (if started) and deletes all or specified
+	                         instances; also deletes this maintenance script
+
+## Example
+
+To stop all instances managed by the tool script immediately, you would run the
+following:
+
+	./tool.pg_rep_test -m immediate stop
+
+To check the status of all instances managed by the script, you would run:
+
+	./tool.pg_rep_test status
+
+This would produce output similar to the following:
+
+	Instance 'primary' on port [5536]: RUNNING
+	Instance 'standby1' on port [5537]: RUNNING
+	Instance 'standby2' on port [5538]: RUNNING
+
+To stop and delete all instances, and the tool script itself, you would run:
+
+	./tool.pg_rep_test destroy
+
+## Notes
+
+If a set of instances is created by pg_rep_test and a tool.pg_rep_test script
+already exists in the same directory, the tool script will be given a distinct
+name.  This is so that multiple tool scripts, each associated with a particular
+set of clusters, can exist alongside each other.  So after the first script is
+created, subsequent ones will be named tool_1.pg_rep_test, tool_2... tool_3...
+etc.
 
 ## License
 
