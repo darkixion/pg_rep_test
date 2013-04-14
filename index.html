@@ -85,6 +85,49 @@ configuration they were created in and the port numbers used:</p>
             ---[Standby 5 (5535)]
 </code></pre>
 
+<h2>Replication structures</h2>
+
+<p>These are ASCII-diagrams of the 3 replication structures.</p>
+
+<h3>Fan</h3>
+
+<pre><code>[Primary (5530)]
+    |
+    ---[Standby 1 (5531)]
+    |
+    ---[Standby 2 (5532)]
+    |
+    ---[Standby 3 (5533)]
+    |
+    ---[Standby 4 (5534)]
+</code></pre>
+
+<h3>Tree</h3>
+
+<pre><code>[Primary (5530)]
+    |
+    ---[Standby 1 (5531)]
+            |
+            ---[Standby 2 (5532)]
+            |
+            ---[Standby 3 (5533)]
+            |
+            ---[Standby 4 (5534)]
+</code></pre>
+
+<h3>Chain</h3>
+
+<pre><code>[Primary (5530)]
+    |
+    ---[Standby 1 (5531)]
+            |
+            ---[Standby 2 (5532)]
+                    |
+                    ---[Standby 3 (5533)]
+                            |
+                            ---[Standby 4 (5534)]
+</code></pre>
+
 <h2>Notes</h2>
 
 <p>You can run pg_rep_test without any parameters which will then just create a primary
