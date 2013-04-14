@@ -64,6 +64,10 @@ If a list of ports isn't specified, it will use a list of unused ports starting 
 5530.  If a port is in use, the next port will be checked and so on, until every
 instance has a port it can use.
 
+If the default directory names (i.e. primary, standby1, standby2 etc.) already exist
+in the directory then new ones will be generated with a numeric suffix. (e.g.
+primary_1, standby1_1 etc.)
+
 All configuration changes that pg_rep_test makes get put into a separate
 configuration file called custom.conf.  This is then referenced by postgresql.conf
 using an 'include' directive at the end of the file.
