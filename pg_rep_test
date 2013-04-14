@@ -454,12 +454,13 @@ case $ACTION in
     ;;
   * )
     echo 'Error: Invalid action '$ACTION' specified.'
+    usage
     exit 1
 esac
 TOOL_FILE
 )
 
-while [[ $(ls -A "tool"${SUBSET:+$SUBSET}".pg_rep_test" 2> /dev/null) ]]
+while [[ $(ls -A "tool"${SUBSET:+'_'$SUBSET}".pg_rep_test" 2> /dev/null) ]]
 do
   ((SUBSET++))
 done
