@@ -134,8 +134,8 @@ The name of the tool is unique to a set of instances.
 	  -?                     show this help then exit
 
 	ACTION can be one of:
-	  status                 shows a list of all managed instances, their ports
-	                         and data directories
+	  status                 lists of all managed instances, their ports, data
+	                         directories and whether they are running or not
 	  start                  start all or specified instances
 	  stop                   stops all or specified instances, which can be used
 	                         with the -m option
