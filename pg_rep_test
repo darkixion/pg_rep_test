@@ -11,7 +11,7 @@ Usage:
 
 Options:
   -a ARCHIVEDIR          create an archive in the named directory
-  -d DATADIRS                comma-separated list of directory names starting with
+  -d DATADIRS            comma-separated list of directory names starting with
                          primary (default: primary,standby1,standby2,...)
   -l LOGFILE             write log messages to a file, but it will not log
                          any pre-check messages
@@ -25,8 +25,8 @@ Options:
                                 remaining ones connect to that standby
                          chain = no more than one standby connects to any node
   -S                     configures all standbys to be synchronous
-  -T                     don't generate management tool script file to manage the
-                         new instances
+  -T                     don't generate management tool script file to manage
+                         the new instances
   -?                     show this help then exit
 OPTIONSDOC
 }
@@ -720,8 +720,8 @@ do
   elif [[ $CURRENT_STANDBY -eq 1 ]]
   then
     echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'..." | write_log STDOUT NONEWLINE
-    echo "pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]}" | write_log
-    pg_basebackup -D $DIR -h 127.0.0.1 -p ${PORT_LIST[0]} &>> $LOG_FILE
+    echo "pg_basebackup -D $DIR -h localhost -p ${PORT_LIST[0]} -U rep_user" | write_log
+    pg_basebackup -D $DIR -h localhost -p ${PORT_LIST[0]} -U rep_user &>> $LOG_FILE
 
     report_status $?
 
@@ -804,9 +804,9 @@ do
     if [[ $INSTANCE -eq 1 ]]
     then
       # Add authentication entries to replicate to a slave.
-      echo "local   replication     all                                trust" 2>> $LOG_FILE 1>> $DIR/pg_hba.conf
-      echo "host    replication     all        127.0.0.1/32            trust" 2>> $LOG_FILE 1>> $DIR/pg_hba.conf
-      echo "host    replication     all        ::1/128                 trust" 2>> $LOG_FILE 1>> $DIR/pg_hba.conf
+      echo "local   replication     rep_user                           trust" 2>> $LOG_FILE 1>> $DIR/pg_hba.conf
+      echo "host    replication     rep_user   127.0.0.1/32            trust" 2>> $LOG_FILE 1>> $DIR/pg_hba.conf
+      echo "host    replication     rep_user   ::1/128                 trust" 2>> $LOG_FILE 1>> $DIR/pg_hba.conf
     fi
   fi
 
@@ -840,7 +840,7 @@ do
         SUBSCRIBE_PORT=${PORT_LIST[`expr $INSTANCE - 2`]}
         ;;
     esac
-    echo "primary_conninfo = 'host=127.0.0.1 port=$SUBSCRIBE_PORT application_name=standby$CURRENT_STANDBY'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
+    echo "primary_conninfo = 'host=127.0.0.1 user=rep_user port=$SUBSCRIBE_PORT application_name=standby$CURRENT_STANDBY'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
   fi
 
   # Start the instance now that it's been configured.
@@ -867,7 +867,19 @@ do
   if [[ $? -ne 0 ]] && [[ $INSTANCE -eq 1 ]]
   then
     echo "Error: Failed to start primary."
-    exit 1;
+    exit 1
+  fi
+
+  if [[ $INSTANCE -eq 1 ]]
+  then
+    echo "psql -p ${PORT_LIST[0]} -h localhost -c 'CREATE USER rep_user REPLICATION;' -d postgres" | write_log 
+    psql -p ${PORT_LIST[0]} -h localhost -c 'CREATE USER rep_user REPLICATION;' -d postgres >> $LOG_FILE
+
+    if [[ $? -ne 0 ]]
+    then
+      echo "Error: Failed to connect to primary."
+      exit 1
+    fi
   fi
 done
 
