@@ -30,7 +30,8 @@
         <section id="main-content">
           <h1>pg_rep_test</h1>
 
-<p>A tool to assist with setting up replication in PostgreSQL 9.1+ for the purposes of testing or demonstration.</p>
+<p>A tool to assist with setting up replication in PostgreSQL 9.1+ for the
+purposes of testing or demonstration.</p>
 
 <pre><code>Usage:
   pg_rep_test [OPTION]
@@ -58,8 +59,8 @@ Options:
 
 <h2>Example</h2>
 
-<p>To create 5 standbys, the first one connecting to the primary, and the rest connecting
-to the first standby, you would run the following:</p>
+<p>To create 5 standbys, the first one connecting to the primary, and the rest
+connecting to the first standby, you would run the following:</p>
 
 <pre><code>./pg_rep_test -r 5 -s tree
 </code></pre>
@@ -130,23 +131,28 @@ configuration they were created in and the port numbers used:</p>
 
 <h2>Notes</h2>
 
-<p>You can run pg_rep_test without any parameters which will then just create a primary
-with a single standby.</p>
+<p>You can run pg_rep_test without any parameters which will then just create a
+primary with a single standby.</p>
 
-<p>If a list of ports isn't specified, it will use a list of unused ports starting from
-5530.  If a port is in use, the next port will be checked and so on, until every
-instance has a port it can use.</p>
+<p>If a list of ports isn't specified, it will use a list of unused ports
+starting from 5530.  If a port is in use, the next port will be checked and so
+on, until every instance has a port it can use.</p>
 
-<p>If the default directory names (i.e. primary, standby1, standby2 etc.) already exist
-in the directory then new ones will be generated with a numeric suffix. (e.g.
-primary_1, standby1_1 etc.)</p>
+<p>If the default directory names (i.e. primary, standby1, standby2 etc.) already
+exist in the directory then new ones will be generated with a numeric suffix.
+(e.g. primary_1, standby1_1 etc.)</p>
 
 <p>All configuration changes that pg_rep_test makes get put into a separate
-configuration file called custom.conf.  This is then referenced by postgresql.conf
-using an 'include' directive at the end of the file.</p>
+configuration file called custom.conf.  This is then referenced by
+postgresql.conf using an 'include' directive at the end of the file.</p>
+
+<p>A dedicated replication user (with the REPLICATION role attribute) called
+rep_user will be created automatically in the primary instance.  This will
+then be used by all standbys for streaming replication connections.</p>
 
 <p>A maintenance tool script is generated automatically after creating a set of
-instances (unless suppressed with -T).  The following section describes its use.</p>
+instances (unless suppressed with -T).  The following section describes its
+use.</p>
 
 <h1>tool(_n).pg_rep_test</h1>
 
@@ -177,8 +183,8 @@ ACTION can be one of:
 
 <h2>Example</h2>
 
-<p>To stop all instances managed by the tool script immediately, you would run the
-following:</p>
+<p>To stop all instances managed by the tool script immediately, you would run
+the following:</p>
 
 <pre><code>./tool.pg_rep_test -m immediate stop
 </code></pre>
@@ -204,10 +210,10 @@ Instance 'standby2' on port [5538]: RUNNING
 
 <p>If a set of instances is created by pg_rep_test and a tool.pg_rep_test script
 already exists in the same directory, the tool script will be given a distinct
-name.  This is so that multiple tool scripts, each associated with a particular
-set of instances, can exist alongside each other.  So after the first script is
-created, subsequent ones will be named tool_1.pg_rep_test, tool_2... tool_3...
-etc.</p>
+name.  This is so that multiple tool scripts, each associated with a
+particular set of instances, can exist alongside each other.  So after the
+first script is created, subsequent ones will be named tool_1.pg_rep_test,
+tool_2... tool_3... etc.</p>
 
 <h2>License</h2>
 
