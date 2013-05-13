@@ -870,10 +870,13 @@ do
     exit 1
   fi
 
+  # Create user to be used for replication.  We have to disable synchronous
+  # replication for the CREATE USER command as we don't have any available
+  # standbys at this point.
   if [[ $INSTANCE -eq 1 ]]
   then
-    echo "psql -p ${PORT_LIST[0]} -h localhost -c 'CREATE USER rep_user REPLICATION;' -d postgres" | write_log 
-    psql -p ${PORT_LIST[0]} -h localhost -c 'CREATE USER rep_user REPLICATION;' -d postgres >> $LOG_FILE
+    echo "psql -p ${PORT_LIST[0]} -h localhost -c 'SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;' -d postgres" | write_log
+    psql -p ${PORT_LIST[0]} -h localhost -c "SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;" -d postgres >> $LOG_FILE
 
     if [[ $? -ne 0 ]]
     then
