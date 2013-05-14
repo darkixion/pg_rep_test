@@ -16,6 +16,7 @@ purposes of testing or demonstration.
 	  -L                     enable database logging in every instance
 	  -p PORTS               comma-separated list of ports to use starting with
 	                         primary (default: 5530,5531,5532,...)
+	  -P                     prompt for input of options interactively
 	  -r REPLICAS            number of replicas to create (default: 1)
 	  -s fan|tree|chain      replication structure (default: fan)
 	                         fan = all standbys connect directly to primary

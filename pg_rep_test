@@ -1,5 +1,28 @@
 #!/bin/bash
 
+# Default values
+
+DEFAULT_REPLICAS=1 # Default number of replicas
+DEFAULT_STARTING_PORT=5530
+DEFAULT_REPLICATION_STRUCTURE='fan'
+
+# Run prerequisite checks
+prerequisite_commands="initdb psql pg_basebackup pg_ctl lsof getopts rmdir rm sync tput"
+
+missing_counter=0
+for required_command in $prerequisite_commands; do
+  if ! hash "$required_command" >/dev/null 2>&1; then
+    printf "Required command not found in PATH: %s\n" "$required_command" >&2
+    ((missing_counter++))
+  fi
+done
+
+if ((missing_counter > 0)); then
+  printf "%d command(s) are missing in PATH, aborting\n" "$missing_counter" >&2
+  exit 1
+fi
+
+
 # Get the version details of the current PostgreSQL installation
 read PG_MAJOR_VERSION PG_MINOR_VERSION <<<$(postgres -V | grep -Po '\d+?\.\d+?' | cut -d '.' --output-delimiter=' ' -f 1,2)
 
@@ -17,7 +40,11 @@ Options:
                          any pre-check messages
   -L                     enable database logging in every instance
   -p PORTS               comma-separated list of ports to use starting with
-                         primary (default: 5530,5531,5532,...)
+                         primary (default: \
+$DEFAULT_STARTING_PORT,\
+`expr $DEFAULT_STARTING_PORT + 1`,\
+`expr $DEFAULT_STARTING_PORT + 2`,...)
+  -P                     prompt for input of options interactively
   -r REPLICAS            number of replicas to create (default: 1)
   -s fan|tree|chain      replication structure (default: fan)
                          fan = all standbys connect directly to primary
@@ -31,6 +58,7 @@ Options:
 OPTIONSDOC
 }
 
+
 # Configure colour variables if outputting to the terminal
 if [ -t 1 ]
 then
@@ -41,7 +69,9 @@ then
   PLAIN=$(tput sgr0)
 fi
 
-while getopts “a:d:l:Lp:r:s:ST?” OPTION
+ERROR_TEXT="$RED"'Error'"$PLAIN"
+
+while getopts “a:d:l:Lp:Pr:s:ST?” OPTION
 do
   case $OPTION in
     a)
@@ -58,6 +88,9 @@ do
       ;;
     p)
       PORTS=$OPTARG
+      ;;
+    P)
+      PROMPT=true
       ;;
     r)
       REPLICAS=$OPTARG
@@ -81,7 +114,7 @@ done
 generate_ports()
 {
   AUTO_PORT_LIST=()
-  for (( PORT=5530, PORT_COUNT=0; PORT_COUNT <= $REPLICAS; PORT++ ))
+  for (( PORT=$DEFAULT_STARTING_PORT, PORT_COUNT=0; PORT_COUNT <= $REPLICAS; PORT++ ))
   do
     if lsof -i:$PORT > /dev/null
     then
@@ -110,6 +143,173 @@ generate_dirs()
     done
     AUTO_DIR_LIST[$REPLICA]="standby$REPLICA"${SUBSET:+'_'$SUBSET}
     unset SUBSET
+  done
+}
+
+# Output a summary of the current settings.
+settings_summary()
+{
+  # Note that a 3rd value passed to output_report here has a coalescing effect
+  # where if the 2nd one is empty, the 3rd is accepted as the 2nd parameter.
+  echo "==== SETTINGS SUMMARY ===="
+  output_report "Replicas" $REPLICAS
+  output_report "Ports" "${PORT_LIST[*]}"
+  output_report "Directories" "${DIR_LIST[*]}"
+  output_report "Archive dir" $ARCHIVE_DIR "[None]"
+  output_report "Replication structure" $REPSTRUCT
+  output_report "Synchronous" $SYNCHRONOUS
+  output_report "Database logging" $ENABLE_LOGS
+  output_report "Log file" $LOG_FILE
+  echo -e "==========================\n"
+
+  # If no parameters were provided, these are considered the defaults, so
+  # allow the user to decide whether they want to change anything.
+  if [ $# -eq 0 ] && $PROMPT
+  then
+    echo "Do you want to use these values or input your own?"
+    select yn in "Use these values" "Customise"; do
+      case $yn in
+          "Use these values" ) break;;
+          "Customise" ) request_params; settings_summary; break;;
+      esac
+    done
+  fi
+}
+
+# Request user-input to modify default parameters.
+request_params()
+{
+  # Input number of replicas
+  while true
+  do
+    INPUT_REPLICAS=0
+    read -p "How many replicas do you want in addition to the primary? [default:${REPLICAS:-$DEFAULT_REPLICAS}] " INPUT_REPLICAS
+
+    INPUT_REPLICAS=${INPUT_REPLICAS:-${REPLICAS:-$DEFAULT_REPLICAS}}
+
+    check_replica_count_numeric $INPUT_REPLICAS
+
+    if [[ $? -eq 0 ]]
+    then
+      REPLICAS=$INPUT_REPLICAS
+      break;
+    fi
+  done
+
+  generate_ports
+
+  # Input port list
+  while true
+  do
+    INPUT_PORTS=()
+    read -p "Input comma-separated list of ports: [default:${PORT_LIST[*]}] " INPUT_PORTS
+    
+    INPUT_PORTS=(${INPUT_PORTS[*]:-${PORT_LIST[@]}})
+    check_port_count "${INPUT_PORTS[*]}"
+    
+    if [[ $? -eq 0 ]]
+    then
+      check_ports_numeric "${INPUT_PORTS[*]}"
+    else
+      continue
+    fi
+
+    if [[ $? -eq 0 ]]
+    then
+      PORT_LIST=(${INPUT_PORTS[*]})
+      break;
+    fi
+  done
+
+  # Input instance directory list
+  while true
+  do
+    INPUT_DIRS=()
+    read -p "Input comma-separated list of directories: [default:${DIR_LIST[*]}] " INPUT_DIRS
+
+    INPUT_DIRS=(${INPUT_DIRS[*]:-${DIR_LIST[@]}})
+
+    check_directory_count "${INPUT_DIRS[*]}"
+
+    if [[ $? -eq 0 ]]
+    then
+      check_directory_usage "${INPUT_DIRS[*]}"
+    else
+      continue
+    fi
+
+    if [[ $? -eq 0 ]]
+    then
+      DIR_LIST=(${INPUT_DIRS[*]})
+      break;
+    fi
+  done
+
+  # Input archive directory
+  while true
+  do
+    INPUT_ARCHIVE_DIR=''
+
+    read -p "Input archive directory (leave blank to disable archiving): [default:${INPUT_ARCHIVE_DIR:-${ARCHIVE_DIR:-(disabled)}}] " INPUT_ARCHIVE_DIR
+
+    check_archive_dir_usage $INPUT_ARCHIVE_DIR
+
+    if [[ $? -eq 0 ]]
+    then
+      ARCHIVE_DIR=$INPUT_ARCHIVE_DIR
+      break;
+    fi
+
+    break;
+  done
+
+  # Input replication structure
+  echo "Select a replication structure: [current value:${INPUT_REPSTRUCT:-${REPSTRUCT:-$DEFAULT_REPLICATION_STRUCTURE}}]"
+  select INPUT_REPSTRUCT in "fan" "tree" "chain"; do
+    case $INPUT_REPSTRUCT in
+      "fan" | "tree" | "chain" ) REPSTRUCT=$INPUT_REPSTRUCT; break;;
+    esac
+  done
+
+  # Input replication durability
+  if [[ $SYNCHRONOUS == true ]]; then
+    REPLICATION_DURABILITY="synchronous"
+  else
+    REPLICATION_DURABILITY="asynchronous"
+  fi
+
+  echo "Select replication durability: [current value:$REPLICATION_DURABILITY]"
+  select INPUT_REPLICATION_DURABILITY in "asynchronous" "synchronous"; do
+    case $INPUT_REPLICATION_DURABILITY in
+      "asynchronous" ) SYNCHRONOUS=false; break;;
+      "synchronous" ) SYNCHRONOUS=true; break;;
+    esac
+  done
+
+  # Enable/disable database logging
+  if [[ $ENABLE_LOGS == true ]]; then
+    DATABASE_LOGGING_ENABLED="yes"
+  else
+    DATABASE_LOGGING_ENABLED="no"
+  fi
+
+  echo "Do you want to enable logging on each database instance? [current value:$DATABASE_LOGGING_ENABLED]"
+  select INPUT_DATABASE_LOGGING in "yes" "no"; do
+    case $INPUT_DATABASE_LOGGING in
+      "yes" ) ENABLE_LOGS=true; break;;
+      "no" ) ENABLE_LOGS=false; break;;
+    esac
+  done
+
+  # Input script log file
+  while true
+  do
+    INPUT_LOG_FILE=''
+    read -p "Input script log file name (leave blank to pipe to /dev/null): [default:${INPUT_LOG_FILE:-/dev/null}] " INPUT_LOG_FILE
+
+    LOG_FILE=${INPUT_LOG_FILE:-/dev/null}
+
+    break;
   done
 }
 
@@ -211,6 +411,154 @@ report_status()
 }
 
 
+## Validation check functions
+
+check_version_support()
+{
+  # Check that we're using a supported version
+  if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -eq 0 ]] ) || [[ PG_MAJOR_VERSION -lt 9 ]]
+  then
+    echo -e "$ERROR_TEXT: Only PostgreSQL 9.1 and above is supported.  You are using"\
+         "PostgreSQL $PG_MAJOR_VERSION.$PG_MINOR_VERSION"
+    exit 1
+  fi
+}
+
+check_replica_count_numeric()
+{
+  local INPUT_REPLICAS=$1
+  local FATAL=${2:-false}
+  # Check that the replicas value is numeric if provided.
+  if [[ -n $INPUT_REPLICAS ]] && ! [[ $INPUT_REPLICAS =~ ^[0-9]+$ ]]
+  then
+    echo -e "$ERROR_TEXT: The number of replicas must be a numeric value."
+    if $FATAL;then exit 1;else return 1;fi
+  fi
+}
+
+check_replication_structure()
+{
+  # Validate replication structure value.
+  if [[ -n $REPSTRUCT ]]
+  then
+    case $REPSTRUCT in
+      fan|tree|chain)
+        ;;
+      * )
+        echo -e "$ERROR_TEXT: Invalid replica structure specified."
+        exit 1
+    esac
+  fi
+}
+
+check_cascading_replication_support()
+{
+  # Throw an error if any attempt to use a cascading replication feature prior to
+  # PostgreSQL 9.2.
+  if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -lt 2 ]] ) && [[ $REPSTRUCT != 'fan' ]]
+  then
+    echo -e "$ERROR_TEXT:  The replication structure '$REPSTRUCT' is not supported prior to"\
+         "PostgreSQL 9.2 as it requires cascading replication."
+    exit 1
+  fi
+}
+
+check_port_count()
+{
+  local INPUT_PORT_LIST=($1)
+  local FATAL=${2:-false}
+  
+  # Ensure that the number of ports equals the number of replicas plus the
+  # primary.
+  if [[ -n $REPLICAS ]] && [[ -n $INPUT_PORT_LIST ]] && [[ ${#INPUT_PORT_LIST[*]} -ne `expr $REPLICAS + 1` ]]
+  then
+    echo -e "$ERROR_TEXT: The number of ports provided does not match the number of replicas + primary."
+    if $FATAL;then exit 1;else return 1;fi
+  fi
+}
+
+check_ports_numeric()
+{
+  
+  local INPUT_PORTS=($1)
+  local FATAL=${2:-false}
+  
+  for PORT in ${INPUT_PORTS[@]}
+  do
+    # Check that the port value is numeric if provided.
+    if [[ -n $PORT ]] && ! [[ $PORT =~ ^[0-9]+$ ]]
+    then
+      echo -e "$ERROR_TEXT:  Invalid port '$PORT'. Port values must be numeric."
+      if $FATAL;then exit 1;else return 1;fi
+    fi
+  done
+}
+
+check_port_usage()
+{
+  # Check that the ports listed aren't already in use.
+  for PORT in ${PORT_LIST[@]}
+  do
+    if lsof -i:$PORT > /dev/null
+    then
+      echo -e "$ERROR_TEXT:  Port $PORT already in use.  Specify a list of unused ports with the -p option, or omit this parameter to auto-select ports."
+      exit 1
+    fi
+  done
+}
+
+check_directory_count()
+{
+  local INPUT_DIR_LIST=($1)
+  local FATAL=${2:-false}
+  
+  # Check that the number of directories is equal to the number of standbys plus
+  # the primary.
+  if [[ -n $REPLICAS ]] && [[ -n $INPUT_DIR_LIST ]] && [[ ${#INPUT_DIR_LIST[@]} -ne `expr $REPLICAS + 1` ]]
+  then
+    echo -e "$ERROR_TEXT: The number of directories provided does not match a primary + the number of replicas."
+    if $FATAL;then exit 1;else return 1;fi
+  fi
+}
+
+check_directory_usage()
+{
+  # Check each directory to see if it's empty if it already exists.
+  for DIR in ${DIR_LIST[@]}
+  do
+    # Check for duplicate directory names in supplied list
+    if [[ `echo ${DIR_LIST[*]} | grep -ow $DIR | wc -l` -gt 1 ]]
+    then
+       echo -e "$ERROR_TEXT: The directory '$DIR' is specified more than once in the provided list."
+       if $FATAL;then exit 1;else return 1;fi
+    fi
+
+    if [[ -d $DIR ]]
+    then
+      if [[ $(ls -A $DIR) ]]
+      then
+        echo -e "$ERROR_TEXT: The directory '$DIR' already exists and is not empty."
+        if $FATAL;then exit 1;else return 1;fi
+      fi
+    fi
+  done
+}
+
+check_archive_dir_usage()
+{
+  local INPUT_ARCHIVE_DIR=$1
+  local FATAL=${2:-false}
+
+  if [[ -d $INPUT_ARCHIVE_DIR ]]
+  then
+    if [[ $(ls -A $INPUT_ARCHIVE_DIR) ]]
+    then
+      echo -e "$ERROR_TEXT: The archive directory '$INPUT_ARCHIVE_DIR' already exists and is not empty."
+      if $FATAL;then exit 1;else return 1;fi
+    fi
+  fi
+}
+
 
 
 ########## CREATE TOOL CODE BEGIN  ##########
@@ -223,6 +571,7 @@ FILE_HEADER=$(cat <<TOOL_CONFIG
 # instance data associated with this maintenance script
 DATADIRS=(${DIR_LIST[*]})
 PORTS=(${PORT_LIST[*]})
+ARCHIVE_DIR=${ARCHIVE_DIR:-''}
 TOOL_CONFIG
 )
 
@@ -361,10 +710,13 @@ destroy()
     pg_ctl -D $INSTANCE status >> $LOG_FILE
     if [[ $? -eq '0' ]]
     then
+      # Stop the instance before we delete it.
       echo -e "Stopping instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
       echo 'pg_ctl stop -D '$INSTANCE' -m immediate' | write_log
       pg_ctl stop -D $INSTANCE -m immediate &>> $LOG_FILE
       sync
+      
+      # Get the status to ensure it has stopped.
       echo "pg_ctl status -D $INSTANCE" | write_log
       pg_ctl status -D $INSTANCE >> $LOG_FILE
       if [[ $? -eq '3' ]]
@@ -375,6 +727,7 @@ destroy()
       echo "Instance in '$INSTANCE' already stopped." | write_log STDOUT
     fi
 
+    # Delete the current instance.
     echo -e "Deleting instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
     echo 'rm -r '$INSTANCE'/*' | write_log
     rm -r $INSTANCE/* &>> $LOG_FILE
@@ -382,7 +735,23 @@ destroy()
     rmdir $INSTANCE &>> $LOG_FILE
     report_status $?
   done
-  rm $0
+  
+  # Delete archive directory recursively, if it exists.
+  if [[ $ARCHIVE_DIR != '' ]]
+  then
+    echo -e "Deleting archive in '$ARCHIVE_DIR'..." | write_log STDOUT NONEWLINE
+    echo 'rm -rf '$ARCHIVE_DIR'/*' | write_log
+    rm -rf $ARCHIVE_DIR/* &>> $LOG_FILE
+    echo 'rmdir '$ARCHIVE_DIR | write_log
+    rmdir $ARCHIVE_DIR &>> $LOG_FILE
+    report_status $?
+  fi
+  
+  # Delete the tool script itself
+  echo -e "Deleting this tool script..." | write_log STDOUT NONEWLINE
+  echo 'rm '$0 | write_log
+  rm $0 &>> $LOG_FILE
+  report_status $?
 }
 
 start()
@@ -472,7 +841,7 @@ echo $FILE_BODY >> $TOOL_FILENAME
 chmod u+x $TOOL_FILENAME
 
 echo -e "The maintenance tool script for these instances is '$TOOL_FILENAME'." | write_log STDOUT
-echo -e "Run $YELLOW./$TOOL_FILENAME -?$PLAIN for help with using it." | write_log STDOUT
+echo -e "Run $YELLOW./$TOOL_FILENAME -?$PLAIN for help with using it."
 }
 
 ########## CREATE TOOL CODE END  ##########
@@ -484,13 +853,7 @@ IFS=","
 PORT_LIST=($PORTS)
 DIR_LIST=($DATADIRS)
 
-# Check that we're using a supported version
-if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -eq 0 ]] ) || [[ PG_MAJOR_VERSION -lt 9 ]]
-then
-  echo "Error: Only PostgreSQL 9.1 and above is supported.  You are using"\
-       "PostgreSQL $PG_MAJOR_VERSION.$PG_MINOR_VERSION"
-  exit 1
-fi
+check_version_support
 
 # From PostgreSQL 9.3, initdb accepts the -N parameter which tells it not to
 # wait for files to be written to disk. We can do this as we're creating
@@ -508,14 +871,7 @@ then
   REPLICAS=1
 fi
 
-# Check that the replicas value is numeric if provided.
-if [[ -n $REPLICAS ]] && ! [[ $REPLICAS =~ ^[0-9]+$ ]]
-then
-  echo 'Error: The number of replicas must be a numeric value.'
-  exit 1
-fi
-
-INSTANCES=`expr $REPLICAS + 1`
+check_replica_count_numeric $REPLICAS true
 
 # Set default for log output
 if [[ -z $LOG_FILE ]]
@@ -523,59 +879,18 @@ then
   LOG_FILE='/dev/null'
 fi
 
-# Validate replication structure value.
-if [[ -n $REPSTRUCT ]]
-then
-  case $REPSTRUCT in
-    fan|tree|chain)
-      ;;
-    * )
-      echo 'Error: Invalid replica structure specified.'
-      exit 1
-  esac
-fi
-
-# Throw an error if any attempt to use a cascading replication feature prior to
-# PostgreSQL 9.2.
-if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -lt 2 ]] ) && [[ $REPSTRUCT != 'fan' ]]
-then
-  echo "Error: The replication structure '$REPSTRUCT' is not supported prior to"\
-       "PostgreSQL 9.2 as it requires cascading replication."
-  exit 1
-fi
-
-# Ensure that if a list of ports has been provided, the number of ports equals
-# the number of replicas plus the primary.
-if [[ -n $REPLICAS ]] && [[ -n $PORTS ]] && [[ ${#PORT_LIST[@]} -ne `expr $REPLICAS + 1` ]]
-then
-  echo 'Error: The number of ports provided does not match the number of replicas + primary.'
-  exit 1
-fi
+check_replication_structure
+check_cascading_replication_support
 
 # If a list of ports hasn't been specified, generate the list of ports.
 if [[ -z $PORTS ]]
 then
   generate_ports
 else
-  # Check that the ports listed aren't already in use.
-  for PORT in ${PORT_LIST[@]}
-  do
-    if lsof -i:$PORT > /dev/null
-    then
-      echo "Error: Port $PORT already in use.  Specify a list of unused ports with the -p option, or omit this parameter to auto-select ports."
-      exit 1
-    fi
-  done
+  check_port_usage "${PORT_LIST[*]}" true
 fi
 
-
-# Check that the number of directories is equal to the number of standbys plus
-# the primary.
-if [[ -n $REPLICAS ]] && [[ -n $DATADIRS ]] && [[ ${#DIR_LIST[@]} -ne `expr $REPLICAS + 1` ]]
-then
-  echo 'Error: The number of directories provided does not match a primary + the number of replicas.'
-  exit 1
-fi
+check_directory_count "${DIR_LIST[*]}" true
 
 # If a list of directories was not explicitly specified, generate the default
 # directory names.
@@ -583,34 +898,23 @@ if [[ -z $DATADIRS ]]
 then
   generate_dirs
 else
-  # Check each directory to see if it's empty if it already exists.
-  for DIR in ${DIR_LIST[@]}
-  do
-    # Check for duplicate directory names in supplied list
-    if [[ `echo ${DIR_LIST[*]} | grep -o $DIR | wc -l` -gt 1 ]]
-    then
-       echo "Error: The directory '$DIR' is specified more than once in the provided list."
-       exit 1
-    fi
-
-    if [[ -d $DIR ]]
-    then
-      if [[ $(ls -A $DIR) ]]
-      then
-        echo "Error: The directory '$DIR' already exists and is not empty."
-        exit 1
-      fi
-    fi
-  done
+  check_directory_usage "${DIR_LIST[*]}" true
 fi
+
+check_archive_dir_usage $ARCHIVE_DIR true
 
 # Set default values where necessary
 
 DIR_LIST=(${DIR_LIST[*]:-${AUTO_DIR_LIST[@]}})
 ENABLE_LOGS=${ENABLE_LOGS:-false}
 PORT_LIST=(${PORT_LIST[*]:-${AUTO_PORT_LIST[@]}})
-REPSTRUCT=${REPSTRUCT:-'fan'}
+PROMPT=${PROMPT:-false}
+REPSTRUCT=${REPSTRUCT:-$DEFAULT_REPLICATION_STRUCTURE}
 SYNCHRONOUS=${SYNCHRONOUS:-false}
+
+
+check_port_count "${PORT_LIST[*]}" true
+check_ports_numeric "${PORT_LIST[*]}" true
 
 #### Set up instances ####
 
@@ -618,18 +922,9 @@ IFS=" "
 echo "Command issued: $0 $*" > $LOG_FILE
 IFS=","
 
-# Note that a 3rd value passed to output_report here has a coalescing effect
-# where if the 2nd one is empty, the 3rd is accepted as the 2nd parameter.
-echo "==== SETTINGS SUMMARY ===="
-output_report "Replicas" $REPLICAS
-output_report "Ports" "${PORT_LIST[*]}"
-output_report "Directories" "${DIR_LIST[*]}"
-output_report "Archive dir" $ARCHIVE_DIR "[None]"
-output_report "Replication structure" $REPSTRUCT
-output_report "Synchronous" $SYNCHRONOUS
-output_report "Database logging" $ENABLE_LOGS
-output_report "Log flie" $LOG_FILE
-echo -e "==========================\n"
+settings_summary
+
+INSTANCES=`expr $REPLICAS + 1`
 
 # Create directories.
 mkdir -p -m 0700 ${DIR_LIST[@]} &>> /dev/null
