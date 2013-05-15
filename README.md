@@ -11,12 +11,12 @@ purposes of testing or demonstration.
 	  -a ARCHIVEDIR          create an archive in the named directory
 	  -d DIRS                comma-separated list of directory names starting with
 	                         primary (default: primary,standby1,standby2,...)
+	  -i                     prompt for input of options interactively
 	  -l LOGFILE             write log messages to a file, but it will not log
 	                         any pre-check messages
 	  -L                     enable database logging in every instance
 	  -p PORTS               comma-separated list of ports to use starting with
 	                         primary (default: 5530,5531,5532,...)
-	  -P                     prompt for input of options interactively
 	  -r REPLICAS            number of replicas to create (default: 1)
 	  -s fan|tree|chain      replication structure (default: fan)
 	                         fan = all standbys connect directly to primary

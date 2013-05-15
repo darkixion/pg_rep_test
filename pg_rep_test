@@ -36,6 +36,7 @@ Options:
   -a ARCHIVEDIR          create an archive in the named directory
   -d DATADIRS            comma-separated list of directory names starting with
                          primary (default: primary,standby1,standby2,...)
+  -i                     prompt for input of options interactively
   -l LOGFILE             write log messages to a file, but it will not log
                          any pre-check messages
   -L                     enable database logging in every instance
@@ -44,7 +45,6 @@ Options:
 $DEFAULT_STARTING_PORT,\
 `expr $DEFAULT_STARTING_PORT + 1`,\
 `expr $DEFAULT_STARTING_PORT + 2`,...)
-  -P                     prompt for input of options interactively
   -r REPLICAS            number of replicas to create (default: 1)
   -s fan|tree|chain      replication structure (default: fan)
                          fan = all standbys connect directly to primary
@@ -71,7 +71,7 @@ fi
 
 ERROR_TEXT="$RED"'Error'"$PLAIN"
 
-while getopts “a:d:l:Lp:Pr:s:ST?” OPTION
+while getopts “a:d:il:Lp:r:s:ST?” OPTION
 do
   case $OPTION in
     a)
@@ -79,6 +79,9 @@ do
       ;;
     d)
       DATADIRS=$OPTARG
+      ;;
+    i)
+      INTERACTIVE=true
       ;;
     l)
       LOG_FILE=$OPTARG
@@ -88,9 +91,6 @@ do
       ;;
     p)
       PORTS=$OPTARG
-      ;;
-    P)
-      PROMPT=true
       ;;
     r)
       REPLICAS=$OPTARG
@@ -164,7 +164,7 @@ settings_summary()
 
   # If no parameters were provided, these are considered the defaults, so
   # allow the user to decide whether they want to change anything.
-  if [ $# -eq 0 ] && $PROMPT
+  if [ $# -eq 0 ] && [[ $INTERACTIVE == true ]]
   then
     echo "Do you want to use these values or input your own?"
     select yn in "Use these values" "Customise"; do
@@ -183,6 +183,8 @@ request_params()
   while true
   do
     INPUT_REPLICAS=0
+
+    echo # newline
     read -p "How many replicas do you want in addition to the primary? [default:${REPLICAS:-$DEFAULT_REPLICAS}] " INPUT_REPLICAS
 
     INPUT_REPLICAS=${INPUT_REPLICAS:-${REPLICAS:-$DEFAULT_REPLICAS}}
@@ -202,11 +204,13 @@ request_params()
   while true
   do
     INPUT_PORTS=()
+
+    echo # newline
     read -p "Input comma-separated list of ports: [default:${PORT_LIST[*]}] " INPUT_PORTS
-    
+
     INPUT_PORTS=(${INPUT_PORTS[*]:-${PORT_LIST[@]}})
     check_port_count "${INPUT_PORTS[*]}"
-    
+
     if [[ $? -eq 0 ]]
     then
       check_ports_numeric "${INPUT_PORTS[*]}"
@@ -225,6 +229,8 @@ request_params()
   while true
   do
     INPUT_DIRS=()
+
+    echo # newline
     read -p "Input comma-separated list of directories: [default:${DIR_LIST[*]}] " INPUT_DIRS
 
     INPUT_DIRS=(${INPUT_DIRS[*]:-${DIR_LIST[@]}})
@@ -250,6 +256,7 @@ request_params()
   do
     INPUT_ARCHIVE_DIR=''
 
+    echo # newline
     read -p "Input archive directory (leave blank to disable archiving): [default:${INPUT_ARCHIVE_DIR:-${ARCHIVE_DIR:-(disabled)}}] " INPUT_ARCHIVE_DIR
 
     check_archive_dir_usage $INPUT_ARCHIVE_DIR
@@ -264,7 +271,9 @@ request_params()
   done
 
   # Input replication structure
+  echo # newline
   echo "Select a replication structure: [current value:${INPUT_REPSTRUCT:-${REPSTRUCT:-$DEFAULT_REPLICATION_STRUCTURE}}]"
+
   select INPUT_REPSTRUCT in "fan" "tree" "chain"; do
     case $INPUT_REPSTRUCT in
       "fan" | "tree" | "chain" ) REPSTRUCT=$INPUT_REPSTRUCT; break;;
@@ -272,12 +281,14 @@ request_params()
   done
 
   # Input replication durability
+
   if [[ $SYNCHRONOUS == true ]]; then
     REPLICATION_DURABILITY="synchronous"
   else
     REPLICATION_DURABILITY="asynchronous"
   fi
 
+  echo # newline
   echo "Select replication durability: [current value:$REPLICATION_DURABILITY]"
   select INPUT_REPLICATION_DURABILITY in "asynchronous" "synchronous"; do
     case $INPUT_REPLICATION_DURABILITY in
@@ -293,6 +304,7 @@ request_params()
     DATABASE_LOGGING_ENABLED="no"
   fi
 
+  echo # newline
   echo "Do you want to enable logging on each database instance? [current value:$DATABASE_LOGGING_ENABLED]"
   select INPUT_DATABASE_LOGGING in "yes" "no"; do
     case $INPUT_DATABASE_LOGGING in
@@ -305,6 +317,8 @@ request_params()
   while true
   do
     INPUT_LOG_FILE=''
+
+    echo # newline
     read -p "Input script log file name (leave blank to pipe to /dev/null): [default:${INPUT_LOG_FILE:-/dev/null}] " INPUT_LOG_FILE
 
     LOG_FILE=${INPUT_LOG_FILE:-/dev/null}
@@ -617,7 +631,7 @@ while getopts “D:m:l:?” OPTION
 do
   case $OPTION in
     D)
-      DATADIRS=($OPTARG)
+      DATADIRS=$OPTARG
       ;;
     m)
       MODE=$OPTARG
@@ -907,8 +921,8 @@ check_archive_dir_usage $ARCHIVE_DIR true
 
 DIR_LIST=(${DIR_LIST[*]:-${AUTO_DIR_LIST[@]}})
 ENABLE_LOGS=${ENABLE_LOGS:-false}
+INTERACTIVE=${INTERACTIVE:-false}
 PORT_LIST=(${PORT_LIST[*]:-${AUTO_PORT_LIST[@]}})
-PROMPT=${PROMPT:-false}
 REPSTRUCT=${REPSTRUCT:-$DEFAULT_REPLICATION_STRUCTURE}
 SYNCHRONOUS=${SYNCHRONOUS:-false}
 
