@@ -9,7 +9,7 @@ purposes of testing or demonstration.
 	
 	Options:
 	  -a ARCHIVEDIR          create an archive in the named directory
-	  -d DIRS                comma-separated list of directory names starting with
+	  -D DATADIRS            comma-separated list of directory names starting with
 	                         primary (default: primary,standby1,standby2,...)
 	  -i                     prompt for input of options interactively
 	  -l LOGFILE             write log messages to a file, but it will not log
@@ -133,22 +133,20 @@ The name of the tool is unique to a set of instances.
 	  ./tool.pg_rep_test [OPTION] [ACTION]
 
 	Options:
-	  -D DATADIRS            comma-separated list of directories of instances
-	                         to affect
 	  -m MODE                shutdown mode (smart, fast or immediate); must be
 	                         used with the 'stop' action
 	  -l LOGFILE             write log messages to a file
 	  -?                     show this help then exit
 
 	ACTION can be one of:
-	  status                 lists all managed instances, their ports, data
-	                         directories and whether they are running or not
-	  start                  start all or specified instances
-	  stop                   stops all or specified instances, which can be used
-	                         with the -m option
-	  restart                restart all or specified instances
-	  destroy                stops (if started) and deletes all or specified
-	                         instances; also deletes this maintenance script
+	  status                 list all instances, their ports, data directories and
+	                         whether they are running or not
+	  start                  start all instances
+	  stop                   stops all instances, which can be used with the -m 
+	                         option
+	  restart                restart all instances
+	  destroy                stops (if started) and deletes all instances; also
+	                         deletes this maintenance script
 
 ## Example
 
