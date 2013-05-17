@@ -58,19 +58,6 @@ $DEFAULT_STARTING_PORT,\
 OPTIONSDOC
 }
 
-
-# Configure colour variables if outputting to the terminal
-if [ -t 1 ]
-then
-  BLUE='\e[1;94m'
-  GREEN='\e[1;32m'
-  RED='\e[1;31m'
-  YELLOW='\e[1;93m'
-  PLAIN=$(tput sgr0)
-fi
-
-ERROR_TEXT="$RED"'Error'"$PLAIN"
-
 while getopts “a:D:il:Lp:r:s:ST?” OPTION
 do
   case $OPTION in
@@ -111,11 +98,27 @@ do
   esac
 done
 
+
+# Configure colour variables if outputting to the terminal
+if [ -t 1 ]
+then
+  BLUE='\e[1;94m'
+  GREEN='\e[1;32m'
+  RED='\e[1;31m'
+  YELLOW='\e[1;93m'
+  PLAIN=$(tput sgr0)
+fi
+
+ERROR_TEXT="$RED"'Error'"$PLAIN"
+
+# Generate a list of unused ports to run instances on.
 generate_ports()
 {
   AUTO_PORT_LIST=()
+
   for (( PORT=$DEFAULT_STARTING_PORT, PORT_COUNT=0; PORT_COUNT <= $REPLICAS; PORT++ ))
   do
+    # Check if the port is currently being used.
     if lsof -i:$PORT > /dev/null
     then
       continue; # port in use, so try next one
@@ -126,8 +129,10 @@ generate_ports()
   done
 }
 
+# Generate a list of unused directory names in which to generate instances.
 generate_dirs()
 {
+  # If the primary directory already exists, suffix a number and try again.
   while [[ $(ls -A "primary"${SUBSET:+'_'$SUBSET} 2> /dev/null) ]]
   do
     ((SUBSET++))
@@ -135,8 +140,10 @@ generate_dirs()
   AUTO_DIR_LIST[0]="primary"${SUBSET:+'_'$SUBSET}
   unset SUBSET
 
+  # Generate a standby directory for each replica.
   for (( REPLICA=1; REPLICA <= $REPLICAS; REPLICA++ ))
   do
+    # If the standby directory already exists, suffix a number and try again.
     while [[ $(ls -A "standby$REPLICA"${SUBSET:+'_'$SUBSET} 2> /dev/null) ]]
     do
       ((SUBSET++))
@@ -187,18 +194,29 @@ request_params()
     echo # newline
     read -p "How many replicas do you want in addition to the primary? [default:${REPLICAS:-$DEFAULT_REPLICAS}] " INPUT_REPLICAS
 
-    INPUT_REPLICAS=${INPUT_REPLICAS:-${REPLICAS:-$DEFAULT_REPLICAS}}
-
     check_replica_count_numeric $INPUT_REPLICAS
 
     if [[ $? -eq 0 ]]
     then
-      REPLICAS=$INPUT_REPLICAS
-      break;
+      # If there is a new number of replicas, regenerate the default ports and
+      # directories.
+      if [[ $INPUT_REPLICAS -ne 0 ]] &&
+         [[ $INPUT_REPLICAS -ne ${REPLICAS:-$DEFAULT_REPLICAS} ]]
+      then
+        unset PORT_LIST DIR_LIST
+
+        REPLICAS=${INPUT_REPLICAS:-${REPLICAS:-$DEFAULT_REPLICAS}}
+
+        generate_ports
+        generate_dirs
+
+        PORT_LIST=(${PORT_LIST[*]:-${AUTO_PORT_LIST[@]}})
+        DIR_LIST=(${DIR_LIST[*]:-${AUTO_DIR_LIST[@]}})
+      fi
+      break
     fi
   done
 
-  generate_ports
 
   # Input port list
   while true
@@ -481,7 +499,7 @@ check_port_count()
 {
   local INPUT_PORT_LIST=($1)
   local FATAL=${2:-false}
-  
+
   # Ensure that the number of ports equals the number of replicas plus the
   # primary.
   if [[ -n $REPLICAS ]] && [[ -n $INPUT_PORT_LIST ]] && [[ ${#INPUT_PORT_LIST[*]} -ne `expr $REPLICAS + 1` ]]
@@ -493,10 +511,10 @@ check_port_count()
 
 check_ports_numeric()
 {
-  
+
   local INPUT_PORTS=($1)
   local FATAL=${2:-false}
-  
+
   for PORT in ${INPUT_PORTS[@]}
   do
     # Check that the port value is numeric if provided.
@@ -525,7 +543,7 @@ check_directory_count()
 {
   local INPUT_DIR_LIST=($1)
   local FATAL=${2:-false}
-  
+
   # Check that the number of directories is equal to the number of standbys plus
   # the primary.
   if [[ -n $REPLICAS ]] && [[ -n $INPUT_DIR_LIST ]] && [[ ${#INPUT_DIR_LIST[@]} -ne `expr $REPLICAS + 1` ]]
