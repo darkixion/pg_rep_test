@@ -5,6 +5,8 @@
 DEFAULT_REPLICAS=1 # Default number of replicas
 DEFAULT_STARTING_PORT=5530
 DEFAULT_REPLICATION_STRUCTURE='fan'
+MINIMUM_MAX_CONNECTIONS=5 # The minimum number of max connections which will
+                          # increase by max_wal_senders.
 
 # Run prerequisite checks
 prerequisite_commands="initdb psql pg_basebackup pg_ctl lsof getopts rmdir rm sync tput"
@@ -43,8 +45,8 @@ Options:
   -p PORTS               comma-separated list of ports to use starting with
                          primary (default: \
 $DEFAULT_STARTING_PORT,\
-`expr $DEFAULT_STARTING_PORT + 1`,\
-`expr $DEFAULT_STARTING_PORT + 2`,...)
+$(expr $DEFAULT_STARTING_PORT + 1),\
+$(expr $DEFAULT_STARTING_PORT + 2),...)
   -r REPLICAS            number of replicas to create (default: 1)
   -s fan|tree|chain      replication structure (default: fan)
                          fan = all standbys connect directly to primary
@@ -171,7 +173,7 @@ settings_summary()
 
   # If no parameters were provided, these are considered the defaults, so
   # allow the user to decide whether they want to change anything.
-  if [ $# -eq 0 ] && [[ $INTERACTIVE == true ]]
+  if [ $# -eq 0 ] && $INTERACTIVE
   then
     echo "Do you want to use these values or input your own?"
     select yn in "Use these values" "Customise"; do
@@ -300,7 +302,8 @@ request_params()
 
   # Input replication durability
 
-  if [[ $SYNCHRONOUS == true ]]; then
+  if $SYNCHRONOUS
+  then
     REPLICATION_DURABILITY="synchronous"
   else
     REPLICATION_DURABILITY="asynchronous"
@@ -316,7 +319,8 @@ request_params()
   done
 
   # Enable/disable database logging
-  if [[ $ENABLE_LOGS == true ]]; then
+  if $ENABLE_LOGS
+  then
     DATABASE_LOGGING_ENABLED="yes"
   else
     DATABASE_LOGGING_ENABLED="no"
@@ -502,7 +506,7 @@ check_port_count()
 
   # Ensure that the number of ports equals the number of replicas plus the
   # primary.
-  if [[ -n $REPLICAS ]] && [[ -n $INPUT_PORT_LIST ]] && [[ ${#INPUT_PORT_LIST[*]} -ne `expr $REPLICAS + 1` ]]
+  if [[ -n $REPLICAS ]] && [[ -n $INPUT_PORT_LIST ]] && [[ ${#INPUT_PORT_LIST[*]} -ne $(expr $REPLICAS + 1) ]]
   then
     echo -e "$ERROR_TEXT: The number of ports provided does not match the number of replicas + primary."
     if $FATAL;then exit 1;else return 1;fi
@@ -546,7 +550,7 @@ check_directory_count()
 
   # Check that the number of directories is equal to the number of standbys plus
   # the primary.
-  if [[ -n $REPLICAS ]] && [[ -n $INPUT_DIR_LIST ]] && [[ ${#INPUT_DIR_LIST[@]} -ne `expr $REPLICAS + 1` ]]
+  if [[ -n $REPLICAS ]] && [[ -n $INPUT_DIR_LIST ]] && [[ ${#INPUT_DIR_LIST[@]} -ne $(expr $REPLICAS + 1) ]]
   then
     echo -e "$ERROR_TEXT: The number of directories provided does not match a primary + the number of replicas."
     if $FATAL;then exit 1;else return 1;fi
@@ -559,7 +563,7 @@ check_directory_usage()
   for DIR in ${DIR_LIST[@]}
   do
     # Check for duplicate directory names in supplied list
-    if [[ `echo ${DIR_LIST[*]} | grep -ow $DIR | wc -l` -gt 1 ]]
+    if [[ $(echo ${DIR_LIST[*]} | grep -ow $DIR | wc -l) -gt 1 ]]
     then
        echo -e "$ERROR_TEXT: The directory '$DIR' is specified more than once in the provided list."
        if $FATAL;then exit 1;else return 1;fi
@@ -952,7 +956,7 @@ IFS=","
 
 settings_summary
 
-INSTANCES=`expr $REPLICAS + 1`
+INSTANCES=$(expr $REPLICAS + 1)
 
 # Create directories.
 mkdir -p -m 0700 ${DIR_LIST[@]} &>> /dev/null
@@ -986,7 +990,7 @@ fi
 
 for (( INSTANCE=1; INSTANCE <= $INSTANCES; INSTANCE++ ))
 do
-  CURRENT_STANDBY=`expr $INSTANCE - 1`
+  CURRENT_STANDBY=$(expr $INSTANCE - 1)
   MAX_WAL_SENDERS=0
   DIR=${DIR_LIST[$CURRENT_STANDBY]}
 
@@ -1032,7 +1036,7 @@ do
     if [[ -n $ARCHIVE_DIR ]]
     then
       echo -e "archive_mode = on\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
-      echo -e "$(echo archive_command = \'cp \"%p\" \"`readlink -f $ARCHIVE_DIR`/%f\"\')\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
+      echo -e "$(echo archive_command = \'cp \"%p\" \"$(readlink -f $ARCHIVE_DIR)/%f\"\')\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
     fi
 
     # Create a copy of the custom config before we modify it further
@@ -1058,7 +1062,7 @@ do
     mv $DIR/custom.conf{.template,}
     if [[ -n $ARCHIVE_DIR ]]
     then
-      echo -e "$(echo restore_command = \'cp \"`readlink -f $ARCHIVE_DIR`/%f\" \"%p\"\')" 2>> $LOG_FILE 1>> $DIR/recovery.conf
+      echo -e "$(echo restore_command = \'cp \"$(readlink -f $ARCHIVE_DIR)/%f\" \"%p\"\')" 2>> $LOG_FILE 1>> $DIR/recovery.conf
     fi
 
     # Now that we've got one base backup, we can just copy it for every remaining standby.
@@ -1089,7 +1093,7 @@ do
       # Only the primary will be sending WAL.
       if [[ $INSTANCE -eq 1 ]]
       then
-        MAX_WAL_SENDERS=`expr $REPLICAS + 3`
+        MAX_WAL_SENDERS=$(expr $REPLICAS + 3)
       fi
       ;;
     tree)
@@ -1099,18 +1103,27 @@ do
           MAX_WAL_SENDERS=3
           ;;
         2)
-          MAX_WAL_SENDERS=`expr $REPLICAS + 2`
+          MAX_WAL_SENDERS=$(expr $REPLICAS + 2)
           ;;
       esac
       ;;
     chain)
       # The primary and every standby except the last will be sending WAL.
-      if [[ $INSTANCE -lt `expr $REPLICAS + 1` ]]
+      if [[ $INSTANCE -lt $(expr $REPLICAS + 1) ]]
       then
          MAX_WAL_SENDERS=3
       fi
       ;;
   esac
+
+  # Configure max_connections to accommodate max_wal_senders.  Note that this
+  # value must be identical between primary and any standby, so we determine
+  # this value based on the primary's max_wal_senders.
+  if [[ $INSTANCE -eq 1 ]]
+  then
+    MAX_CONNECTIONS=$(expr $MAX_WAL_SENDERS + $MINIMUM_MAX_CONNECTIONS)
+  fi
+  echo -e "max_connections = $MAX_CONNECTIONS  # This needs to accommodate max_wal_senders connections in addition to regular connections" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
   # Configure to replicate.
   echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can be connected to\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
@@ -1121,7 +1134,7 @@ do
   if [[ $MAX_WAL_SENDERS > 0 ]]
   then
     echo -e "max_wal_senders = $MAX_WAL_SENDERS        # This is set to number of subscribing standbys + 1.  This then allows use\n" \
-         "                          # of tools like pg_basebackup that also uses streaming replication.\n"  2>> $LOG_FILE 1>> $DIR/custom.conf
+            "                          # of tools like pg_basebackup that also uses streaming replication.\n"  2>> $LOG_FILE 1>> $DIR/custom.conf
     echo "wal_keep_segments = 32" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
     if [[ $INSTANCE -eq 1 ]]
@@ -1160,7 +1173,7 @@ do
       chain)
         # Every standby subscribes to the previous standby, or primary in the
         # case of the 1st standby.
-        SUBSCRIBE_PORT=${PORT_LIST[`expr $INSTANCE - 2`]}
+        SUBSCRIBE_PORT=${PORT_LIST[$(expr $INSTANCE - 2)]}
         ;;
     esac
     echo "primary_conninfo = 'host=127.0.0.1 user=rep_user port=$SUBSCRIBE_PORT application_name=standby$CURRENT_STANDBY'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
