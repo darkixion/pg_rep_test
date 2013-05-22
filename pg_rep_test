@@ -26,7 +26,7 @@ fi
 
 
 # Get the version details of the current PostgreSQL installation
-read PG_MAJOR_VERSION PG_MINOR_VERSION <<<$(postgres -V | grep -Po '\d+?\.\d+?' | cut -d '.' --output-delimiter=' ' -f 1,2)
+read PG_VERSION <<<$(postgres -V | grep -Po '\d+?\.\d+?(\.\d+)?')
 
 usage()
 {
@@ -113,6 +113,12 @@ fi
 
 ERROR_TEXT="$RED"'Error'"$PLAIN"
 
+# Cast a version number into a zero-padded string for comparison
+version()
+{
+  echo "$@" | awk -F. '{ printf("%d%03d%03d\n", $1,$2,$3); }'
+}
+
 # Generate a list of unused ports to run instances on.
 generate_ports()
 {
@@ -191,7 +197,7 @@ request_params()
   # Input number of replicas
   while true
   do
-    INPUT_REPLICAS=0
+    local INPUT_REPLICAS=0
 
     echo # newline
     read -p "How many replicas do you want in addition to the primary? [default:${REPLICAS:-$DEFAULT_REPLICAS}] " INPUT_REPLICAS
@@ -223,7 +229,7 @@ request_params()
   # Input port list
   while true
   do
-    INPUT_PORTS=()
+    local INPUT_PORTS=()
 
     echo # newline
     read -p "Input comma-separated list of ports: [default:${PORT_LIST[*]}] " INPUT_PORTS
@@ -248,7 +254,7 @@ request_params()
   # Input instance directory list
   while true
   do
-    INPUT_DIRS=()
+    local INPUT_DIRS=()
 
     echo # newline
     read -p "Input comma-separated list of directories: [default:${DIR_LIST[*]}] " INPUT_DIRS
@@ -274,7 +280,7 @@ request_params()
   # Input archive directory
   while true
   do
-    INPUT_ARCHIVE_DIR=''
+    local INPUT_ARCHIVE_DIR=''
 
     echo # newline
     read -p "Input archive directory (leave blank to disable archiving): [default:${INPUT_ARCHIVE_DIR:-${ARCHIVE_DIR:-(disabled)}}] " INPUT_ARCHIVE_DIR
@@ -338,7 +344,7 @@ request_params()
   # Input script log file
   while true
   do
-    INPUT_LOG_FILE=''
+    local INPUT_LOG_FILE=''
 
     echo # newline
     read -p "Input script log file name (leave blank to pipe to /dev/null): [default:${INPUT_LOG_FILE:-/dev/null}] " INPUT_LOG_FILE
@@ -351,7 +357,7 @@ request_params()
 
 build_ascii_report()
 {
-  CURRENT_LEVEL=$INSTANCE
+  local CURRENT_LEVEL=$1
 
   # Indent everything according to replication structure.
   if [[ $CURRENT_LEVEL -eq 1 ]]
@@ -394,8 +400,8 @@ build_ascii_report()
 # Parameter 1 (optional): Contains 'STDOUT' if the entry should be displayed.
 write_log()
 {
-  OUTPUT=$1
-  NONEWLINE=$2
+  local OUTPUT=$1
+  local NONEWLINE=$2
 
   if [[ $NONEWLINE == 'NONEWLINE' ]]
   then
@@ -420,8 +426,8 @@ write_log()
 # Parameter 2: Value
 output_report()
 {
-  TITLE=$1
-  VALUE=$2
+  local TITLE=$1
+  local VALUE=$2
 
   echo -ne "$BLUE  $TITLE: $PLAIN"
   echo $VALUE
@@ -431,7 +437,7 @@ output_report()
 # Parameter 1: The exit code of the process being reported
 report_status()
 {
-  STATUS=$1
+  local STATUS=$1
 
   if [[ $STATUS -eq '0' ]] && [[ -n $STATUS ]]
   then
@@ -452,10 +458,10 @@ report_status()
 check_version_support()
 {
   # Check that we're using a supported version
-  if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -eq 0 ]] ) || [[ PG_MAJOR_VERSION -lt 9 ]]
+  if [ $(version $PG_VERSION) -lt $(version "9.1.0") ]
   then
     echo -e "$ERROR_TEXT: Only PostgreSQL 9.1 and above is supported.  You are using"\
-         "PostgreSQL $PG_MAJOR_VERSION.$PG_MINOR_VERSION"
+         "PostgreSQL $PG_VERSION"
     exit 1
   fi
 }
@@ -491,7 +497,7 @@ check_cascading_replication_support()
 {
   # Throw an error if any attempt to use a cascading replication feature prior to
   # PostgreSQL 9.2.
-  if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -lt 2 ]] ) && [[ $REPSTRUCT != 'fan' ]]
+  if ( [ $(version $PG_VERSION) -lt $(version "9.2.0") ] ) && [[ $REPSTRUCT != 'fan' ]]
   then
     echo -e "$ERROR_TEXT:  The replication structure '$REPSTRUCT' is not supported prior to"\
          "PostgreSQL 9.2 as it requires cascading replication."
@@ -677,8 +683,8 @@ fi
 # Parameter 1 (optional): Contains 'STDOUT' if the entry should be displayed.
 write_log()
 {
-  OUTPUT=$1
-  NONEWLINE=$2
+  local OUTPUT=$1
+  local NONEWLINE=$2
 
   if [[ $NONEWLINE == 'NONEWLINE' ]]
   then
@@ -702,7 +708,7 @@ write_log()
 # Parameter 1: The exit code of the process being reported
 report_status()
 {
-  STATUS=$1
+  local STATUS=$1
 
   if [[ $STATUS -eq '0' ]] && [[ -n $STATUS ]]
   then
@@ -890,7 +896,7 @@ check_version_support
 # From PostgreSQL 9.3, initdb accepts the -N parameter which tells it not to
 # wait for files to be written to disk. We can do this as we're creating
 # disposable databases anyway.
-if ( [[ PG_MAJOR_VERSION -eq 9 ]] && [[ PG_MINOR_VERSION -ge 3 ]] ) || [[ PG_MAJOR_VERSION -gt 9 ]]
+if [ $(version $PG_VERSION) -ge $(version "9.3.0") ]
 then
   INITDB_NOSYNC='-N'
 fi
@@ -1084,7 +1090,7 @@ do
     fi
   fi
 
-  build_ascii_report
+  build_ascii_report $INSTANCE
 
   # Set max_wal_senders appropriately so that it has a sufficient amount to
   # serve the standbys that will subscribe to it.
