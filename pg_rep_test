@@ -146,6 +146,7 @@ generate_dirs()
     ((SUBSET++))
   done
   AUTO_DIR_LIST[0]="primary"${SUBSET:+'_'$SUBSET}
+
   unset SUBSET
 
   # Generate a standby directory for each replica.
@@ -157,6 +158,7 @@ generate_dirs()
       ((SUBSET++))
     done
     AUTO_DIR_LIST[$REPLICA]="standby$REPLICA"${SUBSET:+'_'$SUBSET}
+
     unset SUBSET
   done
 }
@@ -452,6 +454,58 @@ report_status()
   return $STATUS
 }
 
+start_instance()
+{
+  local INSTANCE_DIR=$1
+  local INSTANCE_NUMBER=$2
+  local RETRY_COUNT=$3
+  local STATUS=0
+ 
+  # Start the instance now that it's been configured.
+  if [[ $INSTANCE_NUMBER -eq 1 ]]
+  then
+    echo "Starting primary..." | write_log STDOUT NONEWLINE
+    echo "pg_ctl -D $DIR start" | write_log
+    pg_ctl -D $DIR -s start >> $LOG_FILE
+    sleep 1
+  else
+    echo -e "Starting standby $CURRENT_STANDBY..." | write_log STDOUT NONEWLINE
+    echo "pg_ctl -D $DIR start" | write_log
+    pg_ctl -D $DIR -s start >> $LOG_FILE
+  fi
+
+  # Ensure everything is flushed to disk before checking whether the service
+  # is up and running
+  sync
+
+  # Test that the primary or standby has started successfully.
+  echo "pg_ctl -D $DIR status" | write_log
+  pg_ctl -D $DIR status &>> $LOG_FILE
+
+  STATUS=$?
+  echo "status is $STATUS" | write_log
+
+  report_status $STATUS
+
+  # If the instance fails to start, retry
+  if [[ $RETRY_COUNT -gt 0 ]]
+  then
+    case $STATUS in
+      0)
+        # do nothing
+        ;;
+      *)
+        echo "Error: Failed to start instance in '$INSTANCE_DIR'.  Retrying..." | write_log STDOUT 
+        sleep 0.5
+        start_instance $INSTANCE_DIR $INSTANCE_NUMBER $(expr $RETRY_COUNT - 1)
+        ;;
+      esac
+  else
+    echo "Error: Attempts to start '$INSTANCE_DIR' have failed." | write_log STDOUT 
+    exit 1
+  fi
+}
+
 
 ## Validation check functions
 
@@ -704,6 +758,70 @@ write_log()
   done
 }
 
+# Return the number of bytes an XLog position represents.
+xlog_in_bytes()
+{
+	local XLOGID="${1%%/*}"
+	local OFFSET="${1##*/}"
+	echo $((0xFFFFFF * 0x$XLOGID + 0x$OFFSET))
+}
+
+# Return the XLog location of an instance given a port and whether it's a
+# standby.
+xlog_location()
+{
+  local PORT=$1
+  local STANDBY=$2
+
+  case ${STANDBY:-$(in_recovery $PORT)} in
+    true)
+      XLOG_FUNCTION='pg_last_xlog_replay_location'
+      ;;
+    false)
+      XLOG_FUNCTION='pg_current_xlog_location'
+      ;;
+    *)
+      echo "N/A"
+      return 0
+      ;;
+  esac
+
+  echo 'psql -p '"$PORT"' -Atc "'"SELECT $XLOG_FUNCTION();"'" postgres 2>> /dev/null' | write_log
+  echo $(psql -p $PORT -Atc "SELECT $XLOG_FUNCTION();" postgres 2>> $LOG_FILE)
+}
+
+# Given the port of a standby, find the port of the primary that the standby
+# is subscribing to.
+get_primary_port()
+{
+  local STANDBY_PORT=$1
+  local PRIMARY_PORT_QUERY="\
+            WITH q AS (\
+              SELECT * FROM regexp_split_to_table( pg_read_file('recovery.conf'), E'\\\\n') AS x\
+          )\
+          SELECT regexp_replace(x, '.*port=([0-9]*).*', E'\\\\1')\
+          FROM q\
+          WHERE x ~ '^[[:space:]]*primary_conninfo';"
+  echo 'psql -p $STANDBY_PORT -Atc $PRIMARY_PORT_QUERY postgres 2>> /dev/null' | write_log
+  echo $(psql -p $STANDBY_PORT -Atc $PRIMARY_PORT_QUERY postgres 2>> /dev/null)
+}
+
+# Determine whether the specified port is in recovery mode.
+in_recovery()
+{
+  local TARGET_PORT=$1
+  echo "psql -p $TARGET_PORT -Atc 'SELECT pg_is_in_recovery();' postgres 2>> /dev/null" | write_log
+  local RECOVERY=$(psql -p $TARGET_PORT -Atc 'SELECT pg_is_in_recovery();' postgres 2>> $LOG_FILE)
+  local STATUS=$?
+
+  case "$RECOVERY" in
+    "t") echo true;;
+    "f") echo false;;
+    *) # return nothing (i.e. starting up)
+    ;;
+  esac
+}
+
 # Based on the status provided, reports SUCCESS or FAILED
 # Parameter 1: The exit code of the process being reported
 report_status()
@@ -725,19 +843,72 @@ report_status()
 
 status()
 {
+  local STATUS=''
+  local STATUS_COLOUR=''
+  local PRIMARY_PORT=''
+  local IN_RECOVERY=1
+
+  # Output summary table title.
+  local TABLE_TITLE=$(printf " %-${INSTANCE_NAME_LENGTH}s | %-${INSTANCE_PORT_LENGTH}s | Primary Port | Status      | XLog location | Replication lag (bytes)" "Instance" "Port")
+  echo "$TABLE_TITLE"
+  printf "%$(expr ${#TABLE_TITLE})s\n" |tr " " "-"
+
   for (( I=0; I < ${#DATADIRS[@]}; I++ ))
   do
-    echo -n "Instance '${DATADIRS[$I]}' on port [${PORTS[$I]}]: "
     echo "pg_ctl status -D ${DATADIRS[$I]}" | write_log
     pg_ctl status -D ${DATADIRS[$I]} >> $LOG_FILE
+
     case $? in
       0)
-        echo -e $GREEN'RUNNING'$PLAIN
+        STATUS_COLOUR=$GREEN
+
+        case $(in_recovery ${PORTS[$I]}) in
+        true)
+          STATUS='IN RECOVERY'
+          PRIMARY_PORT=$(get_primary_port ${PORTS[$I]})
+
+          echo 'psql -h localhost -p '"$PRIMARY_PORT"' -c "SELECT 1;" postgres' | write_log
+          psql -h localhost -p $PRIMARY_PORT -c 'SELECT 1;' postgres &>> $LOG_FILE
+
+          if [[ $? -eq 0 ]]
+          then
+            PRIMARY_XLOG_LOCATION=$(xlog_location $PRIMARY_PORT)
+          fi
+
+          XLOG_LOCATION=$(xlog_location ${PORTS[$I]} true)
+          if [[ $PRIMARY_LOG_LOCATION == 'N/A' ]]
+          then
+            XLOG_LAG='N/A'
+          else
+            XLOG_LAG=$(expr $(xlog_in_bytes $PRIMARY_XLOG_LOCATION) - $(xlog_in_bytes $XLOG_LOCATION))
+          fi
+          ;;
+        false)
+          STATUS='ONLINE'
+
+          PRIMARY_PORT=''
+          PRIMARY_XLOG_LOCATION=$(xlog_location ${PORTS[$I]} false)
+
+          XLOG_LOCATION=$PRIMARY_XLOG_LOCATION
+          XLOG_LAG=''
+          ;;
+        *)
+          STATUS='STARTING UP'
+          PRIMARY_PORT="N/A"
+          XLOG_LOCATION="N/A"
+          XLOG_LAG=''
+        esac
         ;;
       3)
-        echo -e $RED'NOT RUNNING'$PLAIN
+        local STATUS='OFFLINE'
+        local STATUS_COLOUR=$RED
+        XLOG_LOCATION='N/A'
+        PRIMARY_PORT='N/A'
         ;;
     esac
+
+    printf " %-${INSTANCE_NAME_LENGTH}s | %-${INSTANCE_PORT_LENGTH}s | %-12s | $STATUS_COLOUR%-11s$PLAIN | %-13s | %'d\n" "${DATADIRS[$I]}" "${PORTS[$I]}" "$PRIMARY_PORT" "$STATUS" "$XLOG_LOCATION" "$XLOG_LAG"
+    unset STATUS STATUS_COLOUR XLOG_LAG PRIMARY_XLOG_LOCATION
   done
 }
 
@@ -750,8 +921,8 @@ destroy()
     then
       # Stop the instance before we delete it.
       echo -e "Stopping instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
-      echo 'pg_ctl stop -D '$INSTANCE' -m immediate' | write_log
-      pg_ctl stop -D $INSTANCE -m immediate &>> $LOG_FILE
+      echo 'pg_ctl stop -D '$INSTANCE' -W -m immediate' | write_log
+      pg_ctl stop -D $INSTANCE -W -m immediate &>> $LOG_FILE
       sync
 
       # Get the status to ensure it has stopped.
@@ -843,6 +1014,26 @@ restart()
   done
 }
 
+max_array_element_length()
+{
+  local INPUT_ARRAY=($1)
+  local MAX_ELEMENT_LENGTH=0
+
+  for ELEMENT in ${INPUT_ARRAY[@]}
+  do
+    if [[ $MAX_ELEMENT_LENGTH -lt ${#ELEMENT} ]]
+    then
+      MAX_ELEMENT_LENGTH=${#ELEMENT}
+    fi
+  done
+
+  echo $MAX_ELEMENT_LENGTH
+}
+
+IFS="|"
+INSTANCE_NAME_LENGTH=$(max_array_element_length "${DATADIRS[*]}")
+INSTANCE_PORT_LENGTH=$(max_array_element_length "${PORTS[*]}")
+
 case $ACTION in
   destroy)
     destroy
@@ -899,6 +1090,7 @@ check_version_support
 if [ $(version $PG_VERSION) -ge $(version "9.3.0") ]
 then
   INITDB_NOSYNC='-N'
+  INITDB_CHECKSUMS='-k'
 fi
 
 #### Validate parameters ####
@@ -949,7 +1141,6 @@ INTERACTIVE=${INTERACTIVE:-false}
 PORT_LIST=(${PORT_LIST[*]:-${AUTO_PORT_LIST[@]}})
 REPSTRUCT=${REPSTRUCT:-$DEFAULT_REPLICATION_STRUCTURE}
 SYNCHRONOUS=${SYNCHRONOUS:-false}
-
 
 check_port_count "${PORT_LIST[*]}" true
 check_ports_numeric "${PORT_LIST[*]}" true
@@ -1004,8 +1195,8 @@ do
   if [[ $INSTANCE -eq 1 ]]
   then
     echo -e "Creating primary in '$DIR'..." | write_log STDOUT NONEWLINE
-    echo "initdb $INITDB_NOSYNC -D $DIR -E 'UTF8'" | write_log
-    initdb $INITDB_NOSYNC -D $DIR -E 'UTF8' &>> $LOG_FILE
+    echo "initdb $INITDB_NOSYNC $INITDB_CHECKSUMS -D $DIR -E 'UTF8'" | write_log
+    initdb $INITDB_NOSYNC $INITDB_CHECKSUMS -D $DIR -E 'UTF8' &>> $LOG_FILE
     report_status $?
 
     if [[ $? -ne 0 ]]
@@ -1123,11 +1314,13 @@ do
   esac
 
   # Configure max_connections to accommodate max_wal_senders.  Note that this
-  # value must be identical between primary and any standby, so we determine
-  # this value based on the primary's max_wal_senders.
+  # value must be identical between primary and any standby, but the standby
+  # can have a higher value for max_wal_senders than the primary if we're using
+  # a tree replication structure, so set it to accommodate all replicas which
+  # should cover all eventualities.
   if [[ $INSTANCE -eq 1 ]]
   then
-    MAX_CONNECTIONS=$(expr $MAX_WAL_SENDERS + $MINIMUM_MAX_CONNECTIONS)
+    MAX_CONNECTIONS=$(expr $REPLICAS + 2 + $MINIMUM_MAX_CONNECTIONS)
   fi
   echo -e "max_connections = $MAX_CONNECTIONS  # This needs to accommodate max_wal_senders connections in addition to regular connections" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
@@ -1141,7 +1334,7 @@ do
   then
     echo -e "max_wal_senders = $MAX_WAL_SENDERS        # This is set to number of subscribing standbys + 1.  This then allows use\n" \
             "                          # of tools like pg_basebackup that also uses streaming replication.\n"  2>> $LOG_FILE 1>> $DIR/custom.conf
-    echo "wal_keep_segments = 32" 2>> $LOG_FILE 1>> $DIR/custom.conf
+    echo "wal_keep_segments = 6" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
     if [[ $INSTANCE -eq 1 ]]
     then
@@ -1185,32 +1378,7 @@ do
     echo "primary_conninfo = 'host=127.0.0.1 user=rep_user port=$SUBSCRIBE_PORT application_name=standby$CURRENT_STANDBY'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
   fi
 
-  # Start the instance now that it's been configured.
-  if [[ $INSTANCE -eq 1 ]]
-  then
-    echo "Starting primary..." | write_log STDOUT NONEWLINE
-    echo "pg_ctl -D $DIR start" | write_log
-    pg_ctl -D $DIR -s start >> $LOG_FILE
-  else
-    echo -e "Starting standby $CURRENT_STANDBY..." | write_log STDOUT NONEWLINE
-    echo "pg_ctl -D $DIR start" | write_log
-    pg_ctl -D $DIR -s start >> $LOG_FILE
-  fi
-
-  # Ensure everything is flushed to disk before checking whether the service
-  # is up and running
-  sync
-
-  # Test that the primary or standby has started successfully.
-  pg_ctl -D $DIR status >> $LOG_FILE
-  report_status $?
-
-  # If the primary fails, there's no point in continuing.
-  if [[ $? -ne 0 ]] && [[ $INSTANCE -eq 1 ]]
-  then
-    echo "Error: Failed to start primary."
-    exit 1
-  fi
+  start_instance $DIR $INSTANCE 1
 
   # Create user to be used for replication.  We have to disable synchronous
   # replication for the CREATE USER command as we don't have any available
@@ -1218,7 +1386,7 @@ do
   if [[ $INSTANCE -eq 1 ]]
   then
     echo "psql -p ${PORT_LIST[0]} -h localhost -c 'SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;' -d postgres" | write_log
-    psql -p ${PORT_LIST[0]} -h localhost -c "SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;" -d postgres >> $LOG_FILE
+    psql -p ${PORT_LIST[0]} -h localhost -c "SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;" -d postgres &>> $LOG_FILE
 
     if [[ $? -ne 0 ]]
     then
