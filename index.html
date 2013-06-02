@@ -28,7 +28,8 @@
     <div id="content-wrapper">
       <div class="inner clearfix">
         <section id="main-content">
-          <h1>pg_rep_test</h1>
+          <h1>
+<a name="pg_rep_test" class="anchor" href="#pg_rep_test"><span class="octicon octicon-link"></span></a>pg_rep_test</h1>
 
 <p>A tool to assist with setting up replication in PostgreSQL 9.1+ for the
 purposes of testing or demonstration.</p>
@@ -58,7 +59,8 @@ Options:
   -?                     show this help then exit
 </code></pre>
 
-<h2>Example</h2>
+<h2>
+<a name="example" class="anchor" href="#example"><span class="octicon octicon-link"></span></a>Example</h2>
 
 <p>To create 5 standbys, the first one connecting to the primary, and the rest
 connecting to the first standby, you would run the following:</p>
@@ -87,11 +89,13 @@ configuration they were created in and the port numbers used:</p>
             ---[Standby 5 (5535)]
 </code></pre>
 
-<h2>Replication structures</h2>
+<h2>
+<a name="replication-structures" class="anchor" href="#replication-structures"><span class="octicon octicon-link"></span></a>Replication structures</h2>
 
 <p>These are ASCII-diagrams of the 3 replication structures.</p>
 
-<h3>Fan</h3>
+<h3>
+<a name="fan" class="anchor" href="#fan"><span class="octicon octicon-link"></span></a>Fan</h3>
 
 <pre><code>[Primary (5530)]
     |
@@ -104,7 +108,8 @@ configuration they were created in and the port numbers used:</p>
     ---[Standby 4 (5534)]
 </code></pre>
 
-<h3>Tree</h3>
+<h3>
+<a name="tree" class="anchor" href="#tree"><span class="octicon octicon-link"></span></a>Tree</h3>
 
 <pre><code>[Primary (5530)]
     |
@@ -117,7 +122,8 @@ configuration they were created in and the port numbers used:</p>
             ---[Standby 4 (5534)]
 </code></pre>
 
-<h3>Chain</h3>
+<h3>
+<a name="chain" class="anchor" href="#chain"><span class="octicon octicon-link"></span></a>Chain</h3>
 
 <pre><code>[Primary (5530)]
     |
@@ -130,7 +136,8 @@ configuration they were created in and the port numbers used:</p>
                             ---[Standby 4 (5534)]
 </code></pre>
 
-<h2>Notes</h2>
+<h2>
+<a name="notes" class="anchor" href="#notes"><span class="octicon octicon-link"></span></a>Notes</h2>
 
 <p>You can run pg_rep_test without any parameters which will then just create a
 primary with a single standby.</p>
@@ -155,7 +162,8 @@ then be used by all standbys for streaming replication connections.</p>
 instances (unless suppressed with -T).  The following section describes its
 use.</p>
 
-<h1>tool(_n).pg_rep_test</h1>
+<h1>
+<a name="tool_npg_rep_test" class="anchor" href="#tool_npg_rep_test"><span class="octicon octicon-link"></span></a>tool(_n).pg_rep_test</h1>
 
 <p>A maintenance tool script to manage sets of instances created by pg_rep_test.
 The name of the tool is unique to a set of instances.</p>
@@ -180,7 +188,8 @@ ACTION can be one of:
                          deletes this maintenance script
 </code></pre>
 
-<h2>Example</h2>
+<h2>
+<a name="example-1" class="anchor" href="#example-1"><span class="octicon octicon-link"></span></a>Example</h2>
 
 <p>To stop all instances managed by the tool script immediately, you would run
 the following:</p>
@@ -195,9 +204,12 @@ the following:</p>
 
 <p>This would produce output similar to the following:</p>
 
-<pre><code>Instance 'primary' on port [5536]: RUNNING
-Instance 'standby1' on port [5537]: RUNNING
-Instance 'standby2' on port [5538]: RUNNING
+<pre><code> Instance | Port | Primary Port | Status      | XLog location | Replication lag (bytes)
+---------------------------------------------------------------------------------------
+ primary  | 5530 |              | ONLINE      | 0/3000160     | 0
+ standby1 | 5531 | 5530         | IN RECOVERY | 0/3000160     | 0
+ standby2 | 5532 | 5530         | IN RECOVERY | 0/3000160     | 0
+ standby3 | 5533 | 5530         | IN RECOVERY | 0/3000160     | 0
 </code></pre>
 
 <p>To stop and delete all instances, and the tool script itself, you would run:</p>
@@ -205,7 +217,8 @@ Instance 'standby2' on port [5538]: RUNNING
 <pre><code>./tool.pg_rep_test destroy
 </code></pre>
 
-<h2>Notes</h2>
+<h2>
+<a name="notes-1" class="anchor" href="#notes-1"><span class="octicon octicon-link"></span></a>Notes</h2>
 
 <p>If a set of instances is created by pg_rep_test and a tool.pg_rep_test script
 already exists in the same directory, the tool script will be given a distinct
@@ -214,7 +227,8 @@ particular set of instances, can exist alongside each other.  So after the
 first script is created, subsequent ones will be named tool_1.pg_rep_test,
 tool_2... tool_3... etc.</p>
 
-<h2>License</h2>
+<h2>
+<a name="license" class="anchor" href="#license"><span class="octicon octicon-link"></span></a>License</h2>
 
 <p>pg_rep_test is licensed under The PostgreSQL License
 (<a href="http://www.opensource.org/licenses/postgresql">http://www.opensource.org/licenses/postgresql</a>),
