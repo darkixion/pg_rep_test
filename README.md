@@ -161,9 +161,12 @@ To check the status of all instances managed by the script, you would run:
 
 This would produce output similar to the following:
 
-	Instance 'primary' on port [5536]: RUNNING
-	Instance 'standby1' on port [5537]: RUNNING
-	Instance 'standby2' on port [5538]: RUNNING
+	 Instance | Port | Primary Port | Status      | XLog location | Replication lag (bytes)
+	---------------------------------------------------------------------------------------
+	 primary  | 5530 |              | ONLINE      | 0/3000160     | 0
+	 standby1 | 5531 | 5530         | IN RECOVERY | 0/3000160     | 0
+	 standby2 | 5532 | 5530         | IN RECOVERY | 0/3000160     | 0
+	 standby3 | 5533 | 5530         | IN RECOVERY | 0/3000160     | 0
 
 To stop and delete all instances, and the tool script itself, you would run:
 
