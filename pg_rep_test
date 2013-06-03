@@ -122,10 +122,20 @@ version()
 # Generate a list of unused ports to run instances on.
 generate_ports()
 {
+  local START_TIME=$(date +%s)
+  local DELAY_WARNING=false
   AUTO_PORT_LIST=()
-
+  
   for (( PORT=$DEFAULT_STARTING_PORT, PORT_COUNT=0; PORT_COUNT <= $REPLICAS; PORT++ ))
   do
+    if [[ $(expr $(date +%s) - $START_TIME) -gt 4 ]] && [ $DELAY_WARNING == false ]
+    then
+      echo "Notice: Currently determining available ports.  This is taking"\
+           "longer than usual possibly due to many other instances already"\
+           "running."
+      DELAY_WARNING=true
+    fi
+    
     # Check if the port is currently being used.
     if lsof -i:$PORT > /dev/null
     then
@@ -441,7 +451,7 @@ report_status()
 {
   local STATUS=$1
 
-  if [[ $STATUS -eq '0' ]] && [[ -n $STATUS ]]
+  if [[ $STATUS -eq 0 ]] && [[ -n $STATUS ]]
   then
     echo -ne $GREEN # green
     echo -e " SUCCESS!" | write_log STDOUT NONEWLINE
@@ -828,7 +838,7 @@ report_status()
 {
   local STATUS=$1
 
-  if [[ $STATUS -eq '0' ]] && [[ -n $STATUS ]]
+  if [[ $STATUS -eq 0 ]] && [[ -n $STATUS ]]
   then
     echo -ne $GREEN # green
     echo -e ' SUCCESS!' | write_log STDOUT NONEWLINE
@@ -917,7 +927,7 @@ destroy()
   for INSTANCE in ${DATADIRS[@]}
   do
     pg_ctl -D $INSTANCE status >> $LOG_FILE
-    if [[ $? -eq '0' ]]
+    if [[ $? -eq 0 ]]
     then
       # Stop the instance before we delete it.
       echo -e "Stopping instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
@@ -928,7 +938,7 @@ destroy()
       # Get the status to ensure it has stopped.
       echo "pg_ctl status -D $INSTANCE" | write_log
       pg_ctl status -D $INSTANCE >> $LOG_FILE
-      if [[ $? -eq '3' ]]
+      if [[ $? -eq 3 ]]
       then
         report_status '0'
       fi
@@ -988,7 +998,7 @@ stop()
   for INSTANCE in ${DATADIRS[@]}
   do
     pg_ctl -D $INSTANCE status >> $LOG_FILE
-    if [[ $? -eq '0' ]]
+    if [[ $? -eq 0 ]]
     then
       echo -e "Stopping instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
       echo 'pg_ctl stop -D '$INSTANCE' -m '$MODE | write_log
@@ -1119,7 +1129,6 @@ then
 else
   check_port_usage "${PORT_LIST[*]}" true
 fi
-
 check_directory_count "${DIR_LIST[*]}" true
 
 # If a list of directories was not explicitly specified, generate the default
@@ -1320,7 +1329,12 @@ do
   # should cover all eventualities.
   if [[ $INSTANCE -eq 1 ]]
   then
-    MAX_CONNECTIONS=$(expr $REPLICAS + 2 + $MINIMUM_MAX_CONNECTIONS)
+    if [[ $REPSTRUCT == "chain" ]]
+    then
+      MAX_CONNECTIONS=$(expr 3 + $MINIMUM_MAX_CONNECTIONS)
+    else
+      MAX_CONNECTIONS=$(expr $REPLICAS + 2 + $MINIMUM_MAX_CONNECTIONS)
+    fi
   fi
   echo -e "max_connections = $MAX_CONNECTIONS  # This needs to accommodate max_wal_senders connections in addition to regular connections" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
