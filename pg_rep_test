@@ -389,7 +389,11 @@ build_ascii_report()
         fi
         ;;
       chain)
-        INDENT=$CURRENT_STANDBY
+        INDENT=$(expr $CURRENT_STANDBY % 10)
+        if [[ $INDENT -eq 0 ]]
+        then
+          ASCII_REPORT=$ASCII_REPORT"----------------------------------------------------------------------------/\n"
+        fi
         ;;
     esac
 
