@@ -29,6 +29,13 @@ purposes of testing or demonstration.
 	  -?                     show this help then exit
 
 
+If you don't know where to start, just run:
+
+	./pg_rep_test -i
+
+This will provide you with an interactive prompt to configure it however you
+want.
+
 ## Example
 
 To create 5 standbys, the first one connecting to the primary, and the rest
