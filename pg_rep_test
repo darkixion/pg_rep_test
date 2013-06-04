@@ -532,6 +532,7 @@ start_instance()
         ;;
       esac
   elif [[ $STATUS -ne 0 ]]
+  then
     echo "Error: Attempts to start '$INSTANCE_DIR' have failed." | write_log STDOUT 
     exit 1
   fi
@@ -1246,6 +1247,7 @@ do
     if $ENABLE_LOGS
     then
       echo -e "logging_collector = on\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
+      echo -e "log_line_prefix = '%m - %u - %d'" 2>> $LOG_FILE 1>>$DIR/custom.conf
     fi
 
     # Define list of standbys.  We want to set this up in the primary prior to
