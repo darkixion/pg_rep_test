@@ -473,19 +473,23 @@ start_instance()
   local INSTANCE_DIR=$1
   local INSTANCE_NUMBER=$2
   local RETRY_COUNT=$3
+  local CHECK_ONLY=${4:-false}
   local STATUS=0
  
-  # Start the instance now that it's been configured.
-  if [[ $INSTANCE_NUMBER -eq 1 ]]
+  if [ $CHECK_ONLY == false ]
   then
-    echo "Starting primary..." | write_log STDOUT NONEWLINE
-    echo "pg_ctl -D $DIR start" | write_log
-    pg_ctl -D $DIR -s start >> $LOG_FILE
-    sleep 1
-  else
-    echo -e "Starting standby $CURRENT_STANDBY..." | write_log STDOUT NONEWLINE
-    echo "pg_ctl -D $DIR start" | write_log
-    pg_ctl -D $DIR -s start >> $LOG_FILE
+    # Start the instance now that it's been configured.
+    if [[ $INSTANCE_NUMBER -eq 1 ]]
+    then
+      echo "Starting primary..." | write_log STDOUT NONEWLINE
+      echo "pg_ctl -D $DIR start" | write_log
+      pg_ctl -D $DIR -s start >> $LOG_FILE
+      sleep 1
+    else
+      echo -e "Starting standby $CURRENT_STANDBY..." | write_log STDOUT NONEWLINE
+      echo "pg_ctl -D $DIR start" | write_log
+      pg_ctl -D $DIR -s start >> $LOG_FILE
+    fi
   fi
 
   # Ensure everything is flushed to disk before checking whether the service
@@ -509,12 +513,25 @@ start_instance()
         # do nothing
         ;;
       *)
-        echo "Error: Failed to start instance in '$INSTANCE_DIR'.  Retrying..." | write_log STDOUT 
+        echo -e "Error: Failed to start instance in '$INSTANCE_DIR'.  Rechecking..." | write_log STDOUT 
         sleep 0.5
+        
+        echo "pg_ctl -D $DIR status" | write_log
+        pg_ctl -D $DIR status &>> $LOG_FILE
+        STATUS=$?
+        echo "status is $STATUS" | write_log
+        report_status $STATUS
+        
+        if [ $STATUS == 0 ]
+        then
+          return 0
+        fi
+        
+        echo "Error: Instance doesn't appear to be available '$INSTANCE_DIR'.  Retrying..." | write_log STDOUT 
         start_instance $INSTANCE_DIR $INSTANCE_NUMBER $(expr $RETRY_COUNT - 1)
         ;;
       esac
-  else
+  elif [[ $STATUS -ne 0 ]]
     echo "Error: Attempts to start '$INSTANCE_DIR' have failed." | write_log STDOUT 
     exit 1
   fi
