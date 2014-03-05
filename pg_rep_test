@@ -32,7 +32,7 @@ usage()
 {
 cat << OPTIONSDOC
 Usage:
-  $0 [OPTION]
+  $(basename $0) [OPTION]
 
 Options:
   -a ARCHIVEDIR          create an archive in the named directory
@@ -48,6 +48,7 @@ $DEFAULT_STARTING_PORT,\
 $(expr $DEFAULT_STARTING_PORT + 1),\
 $(expr $DEFAULT_STARTING_PORT + 2),...)
   -r REPLICAS            number of replicas to create (default: 1)
+  -R                     use replication slots
   -s fan|tree|chain      replication structure (default: fan)
                          fan = all standbys connect directly to primary
                          tree = one standby connects directly to primary, the
@@ -60,7 +61,7 @@ $(expr $DEFAULT_STARTING_PORT + 2),...)
 OPTIONSDOC
 }
 
-while getopts “a:D:il:Lp:r:s:ST?” OPTION
+while getopts “a:D:il:Lp:r:Rs:ST?” OPTION
 do
   case $OPTION in
     a)
@@ -84,6 +85,9 @@ do
     r)
       REPLICAS=$OPTARG
       ;;
+    R)
+      REPLICATION_SLOTS=true
+      ;;
     s)
       REPSTRUCT=$OPTARG
       ;;
@@ -100,6 +104,7 @@ do
   esac
 done
 
+printf "Detected version of PostgreSQL: %s\n\n" $PG_VERSION
 
 # Configure colour variables if outputting to the terminal
 if [ -t 1 ]
@@ -125,7 +130,7 @@ generate_ports()
   local START_TIME=$(date +%s)
   local DELAY_WARNING=false
   AUTO_PORT_LIST=()
-  
+
   for (( PORT=$DEFAULT_STARTING_PORT, PORT_COUNT=0; PORT_COUNT <= $REPLICAS; PORT++ ))
   do
     if [[ $(expr $(date +%s) - $START_TIME) -gt 4 ]] && [ $DELAY_WARNING == false ]
@@ -135,7 +140,7 @@ generate_ports()
            "running."
       DELAY_WARNING=true
     fi
-    
+
     # Check if the port is currently being used.
     if lsof -i:$PORT > /dev/null
     then
@@ -185,6 +190,10 @@ settings_summary()
   output_report "Archive dir" $ARCHIVE_DIR "[None]"
   output_report "Replication structure" $REPSTRUCT
   output_report "Synchronous" $SYNCHRONOUS
+  if [ $(version $PG_VERSION) -ge $(version "9.4.0") ]
+  then
+    output_report "Replication slots" $REPLICATION_SLOTS
+  fi
   output_report "Database logging" $ENABLE_LOGS
   output_report "Log file" $LOG_FILE
   echo -e "==========================\n"
@@ -336,6 +345,28 @@ request_params()
     esac
   done
 
+  # Use replication slots
+
+  if [ $(version $PG_VERSION) -ge $(version "9.4.0") ]
+  then
+
+    if $REPLICATION_SLOTS
+    then
+      REPLICATION_SLOTS_ENABLED="yes"
+    else
+      REPLICATION_SLOTS_ENABLED="no"
+    fi
+
+    echo #newline
+    echo "Do you want to use replication slots? [current value:$REPLICATION_SLOTS_ENABLED]"
+    select INPUT_REPLICATION_SLOTS in "yes" "no"; do
+      case $INPUT_REPLICATION_SLOTS in
+        "yes") REPLICATION_SLOTS=true; break;;
+        "no") REPLICATION_SLOTS=false; break;;
+      esac
+    done
+  fi
+
   # Enable/disable database logging
   if $ENABLE_LOGS
   then
@@ -475,20 +506,20 @@ start_instance()
   local RETRY_COUNT=$3
   local CHECK_ONLY=${4:-false}
   local STATUS=0
- 
+
   if [ $CHECK_ONLY == false ]
   then
     # Start the instance now that it's been configured.
     if [[ $INSTANCE_NUMBER -eq 1 ]]
     then
       echo "Starting primary..." | write_log STDOUT NONEWLINE
-      echo "pg_ctl -D $DIR start" | write_log
-      pg_ctl -D $DIR -s start >> $LOG_FILE
+      echo "pg_ctl -w -D $DIR start" | write_log
+      pg_ctl -w -D $DIR -s start >> $LOG_FILE
       sleep 1
     else
       echo -e "Starting standby $CURRENT_STANDBY..." | write_log STDOUT NONEWLINE
-      echo "pg_ctl -D $DIR start" | write_log
-      pg_ctl -D $DIR -s start >> $LOG_FILE
+      echo "pg_ctl -w -D $DIR start" | write_log
+      pg_ctl -w -D $DIR -s start >> $LOG_FILE
     fi
   fi
 
@@ -515,18 +546,18 @@ start_instance()
       *)
         echo -e "Error: Failed to start instance in '$INSTANCE_DIR'.  Rechecking..." | write_log STDOUT 
         sleep 0.5
-        
+
         echo "pg_ctl -D $DIR status" | write_log
         pg_ctl -D $DIR status &>> $LOG_FILE
         STATUS=$?
         echo "status is $STATUS" | write_log
         report_status $STATUS
-        
+
         if [ $STATUS == 0 ]
         then
           return 0
         fi
-        
+
         echo "Error: Instance doesn't appear to be available '$INSTANCE_DIR'.  Retrying..." | write_log STDOUT 
         start_instance $INSTANCE_DIR $INSTANCE_NUMBER $(expr $RETRY_COUNT - 1)
         ;;
@@ -547,7 +578,18 @@ check_version_support()
   if [ $(version $PG_VERSION) -lt $(version "9.1.0") ]
   then
     echo -e "$ERROR_TEXT: Only PostgreSQL 9.1 and above is supported.  You are using"\
-         "PostgreSQL $PG_VERSION"
+         "PostgreSQL $PG_VERSION."
+    exit 1
+  fi
+}
+
+check_replication_slot_support()
+{
+  # If replication slots have been requested, ensure we're using 9.4 or above
+  if [ $(version $PG_VERSION) -lt $(version "9.4.0") ] && $REPLICATION_SLOTS
+  then
+    echo -e "$ERROR_TEXT: Replication slots (-R) are only supported in PostgreSQL 9.4"\
+         "and above.  You are using PostgreSQL $PG_VERSION."
     exit 1
   fi
 }
@@ -1142,6 +1184,7 @@ then
 fi
 
 check_replication_structure
+check_replication_slot_support
 check_cascading_replication_support
 
 # If a list of ports hasn't been specified, generate the list of ports.
@@ -1172,6 +1215,7 @@ INTERACTIVE=${INTERACTIVE:-false}
 PORT_LIST=(${PORT_LIST[*]:-${AUTO_PORT_LIST[@]}})
 REPSTRUCT=${REPSTRUCT:-$DEFAULT_REPLICATION_STRUCTURE}
 SYNCHRONOUS=${SYNCHRONOUS:-false}
+REPLICATION_SLOTS=${REPLICATION_SLOTS:-false}
 
 check_port_count "${PORT_LIST[*]}" true
 check_ports_numeric "${PORT_LIST[*]}" true
@@ -1359,10 +1403,75 @@ do
       MAX_CONNECTIONS=$(expr $REPLICAS + 2 + $MINIMUM_MAX_CONNECTIONS)
     fi
   fi
-  echo -e "max_connections = $MAX_CONNECTIONS  # This needs to accommodate max_wal_senders connections in addition to regular connections" 2>> $LOG_FILE 1>> $DIR/custom.conf
+  echo -e "max_connections = $MAX_CONNECTIONS        # This needs to accommodate max_wal_senders connections in addition to\n" \
+          "                          # regular connections.\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
+
+  IFS=" "
+  case $REPSTRUCT in
+    fan)
+      case $INSTANCE in
+        1) # primary
+         # the primary doesn't subscribe to any port or slot but will create
+         # a slot for all standbys in a fan configuration.
+          unset SUBSCRIBE_PORT
+          unset SUBSCRIBE_SLOT
+          CREATE_SLOTS=(${DIR_LIST[*]:1})
+          ;;
+        *) # all standbys
+          # all standbys subscribe directly to the primary in a tree
+          # configuration on both port and slot, but none create slots.
+          SUBSCRIBE_PORT=${PORT_LIST[0]}
+          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
+          unset CREATE_SLOTS
+          ;;
+      esac
+      ;;
+    tree)
+      case $INSTANCE in
+        1) # primary
+          unset SUBSCRIBE_PORT
+          unset SUBSCRIBE_SLOT
+          CREATE_SLOTS=${DIR_LIST[1]}
+          ;;
+        2) # 1st standby
+          SUBSCRIBE_PORT=${PORT_LIST[0]}
+          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
+          CREATE_SLOTS=(${DIR_LIST[@]:2})
+          ;;
+        *) # remaining standby
+          SUBSCRIBE_PORT=${PORT_LIST[1]}
+          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
+          unset CREATE_SLOTS
+      esac
+      ;;
+    chain)
+      case $INSTANCE in
+        1) #primary
+          unset SUBSCRIBE_PORT
+          unset SUBSCRIBE_SLOT
+          CREATE_SLOTS=${DIR_LIST[1]}
+          ;;
+        *)
+          SUBSCRIBE_PORT=${PORT_LIST[$INSTANCE - 2]}
+          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
+          CREATE_SLOTS=${DIR_LIST[$INSTANCE]}
+          ;;&
+        $INSTANCES) # last standby
+          unset CREATE_SLOTS
+          ;;
+      esac
+      ;;
+    esac
+  IFS=","
 
   # Configure to replicate.
-  echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can be connected to\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
+  if $REPLICATION_SLOTS
+  then
+    echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can accept connections.\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
+  else
+    echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can accept connections.\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
+  fi
+
   echo -e "port = ${PORT_LIST[$CURRENT_STANDBY]}\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
   # Only set up streaming replication configuration for instances that will
@@ -1370,8 +1479,18 @@ do
   if [[ $MAX_WAL_SENDERS > 0 ]]
   then
     echo -e "max_wal_senders = $MAX_WAL_SENDERS        # This is set to number of subscribing standbys + 1.  This then allows use\n" \
-            "                          # of tools like pg_basebackup that also uses streaming replication.\n"  2>> $LOG_FILE 1>> $DIR/custom.conf
-    echo "wal_keep_segments = 6" 2>> $LOG_FILE 1>> $DIR/custom.conf
+            "                          # of tools like pg_basebackup that also uses streaming replication.\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
+
+    # If replication slots are to be used, set the number of replication slots
+    # to match that of WAL senders.  Otherwise we need to guess how many WAL
+    # files to keep behind.
+    if $REPLICATION_SLOTS
+    then
+      echo -e "max_replication_slots = $MAX_WAL_SENDERS  # This allows the standbys to tell the primary what WAL\n" \
+	      "                          # location they're up to." 2>> $LOG_FILE 1>> $DIR/custom.conf
+    else
+      echo "wal_keep_segments = 6" 2>> $LOG_FILE 1>> $DIR/custom.conf
+    fi
 
     if [[ $INSTANCE -eq 1 ]]
     then
@@ -1389,45 +1508,47 @@ do
     echo "standby_mode = 'on'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
     echo "recovery_target_timeline = 'latest'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
 
-    case $REPSTRUCT in
-      fan)
-        # All standbys subscribe to the primary directly.
-        SUBSCRIBE_PORT=${PORT_LIST[0]}
-        ;;
-      tree)
-        # Only the 1st standby subscribes directly to the primary. The rest
-        # subscribe to the 1st standby.
-        case $INSTANCE in
-        2)
-          SUBSCRIBE_PORT=${PORT_LIST[0]}
-          ;;
-        *)
-          SUBSCRIBE_PORT=${PORT_LIST[1]}
-          ;;
-        esac
-        ;;
-      chain)
-        # Every standby subscribes to the previous standby, or primary in the
-        # case of the 1st standby.
-        SUBSCRIBE_PORT=${PORT_LIST[$(expr $INSTANCE - 2)]}
-        ;;
-    esac
     echo "primary_conninfo = 'host=127.0.0.1 user=rep_user port=$SUBSCRIBE_PORT application_name=standby$CURRENT_STANDBY'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
+    if $REPLICATION_SLOTS
+    then
+      echo "primary_slotname = '"$SUBSCRIBE_SLOT"_physical_slot'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
+    fi
   fi
 
   start_instance $DIR $INSTANCE 1
+
+  if $REPLICATION_SLOTS
+  then
+    unset CREATE_REPLICATION_SLOTS_COMMAND
+    if [[ -n $CREATE_SLOTS ]]
+    then
+      for CREATE_SLOT in ${CREATE_SLOTS[*]}
+      do
+        CREATE_REPLICATION_SLOTS_COMMAND=$CREATE_REPLICATION_SLOTS_COMMAND"SELECT pg_create_physical_replication_slot('"$CREATE_SLOT"_physical_slot');"
+      done
+    fi
+  fi
 
   # Create user to be used for replication.  We have to disable synchronous
   # replication for the CREATE USER command as we don't have any available
   # standbys at this point.
   if [[ $INSTANCE -eq 1 ]]
   then
-    echo "psql -p ${PORT_LIST[0]} -h localhost -c 'SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;' -d postgres" | write_log
-    psql -p ${PORT_LIST[0]} -h localhost -c "SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;" -d postgres &>> $LOG_FILE
+    echo "psql -p ${PORT_LIST[0]} -h localhost -c 'SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;$CREATE_REPLICATION_SLOTS_COMMAND;' -d postgres" | write_log
+    psql -p ${PORT_LIST[0]} -h localhost -c "SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;$CREATE_REPLICATION_SLOTS_COMMAND" -d postgres &>> $LOG_FILE
 
     if [[ $? -ne 0 ]]
     then
       echo "Error: Failed to connect to primary."
+      exit 1
+    fi
+  else
+    echo "psql -p ${PORT_LIST[$CURRENT_STANDBY]} -h localhost -c 'SET SESSION synchronous_commit TO 'off';$CREATE_REPLICATION_SLOTS_COMMAND;' -d postgres" | write_log
+    psql -p ${PORT_LIST[$CURRENT_STANDBY]} -h localhost -c "SET SESSION synchronous_commit TO 'off';$CREATE_REPLICATION_SLOTS_COMMAND" -d postgres &>> $LOG_FILE
+
+    if [[ $? -ne 0 ]]
+    then
+      echo "Error: Failed to connect to standby $CURRENT_STANDBY."
       exit 1
     fi
   fi

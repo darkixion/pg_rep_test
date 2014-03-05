@@ -18,6 +18,7 @@ purposes of testing or demonstration.
 	  -p PORTS               comma-separated list of ports to use starting with
 	                         primary (default: 5530,5531,5532,...)
 	  -r REPLICAS            number of replicas to create (default: 1)
+	  -R                     use replication slots
 	  -s fan|tree|chain      replication structure (default: fan)
 	                         fan = all standbys connect directly to primary
 	                         tree = one standby connects directly to primary, the
