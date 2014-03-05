@@ -1464,13 +1464,7 @@ do
     esac
   IFS=","
 
-  # Configure to replicate.
-  if $REPLICATION_SLOTS
-  then
-    echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can accept connections.\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
-  else
-    echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can accept connections.\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
-  fi
+  echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can accept connections.\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
   echo -e "port = ${PORT_LIST[$CURRENT_STANDBY]}\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
