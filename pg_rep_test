@@ -133,7 +133,7 @@ generate_ports()
 
   for (( PORT=$DEFAULT_STARTING_PORT, PORT_COUNT=0; PORT_COUNT <= $REPLICAS; PORT++ ))
   do
-    if [[ $(expr $(date +%s) - $START_TIME) -gt 4 ]] && [ $DELAY_WARNING == false ]
+    if [[ $(expr $(date +%s) - $START_TIME) -gt 4 ]] && [ "$DELAY_WARNING" == false ]
     then
       echo "Notice: Currently determining available ports.  This is taking"\
            "longer than usual possibly due to many other instances already"\
@@ -450,7 +450,7 @@ write_log()
   local OUTPUT=$1
   local NONEWLINE=$2
 
-  if [[ $NONEWLINE == 'NONEWLINE' ]]
+  if [[ "$NONEWLINE" == 'NONEWLINE' ]]
   then
     OPTION='-n'
   else
@@ -459,7 +459,7 @@ write_log()
 
   while IFS= read -r LINE
   do
-    if [[ $OUTPUT == STDOUT ]]
+    if [[ "$OUTPUT" == STDOUT ]]
     then
         echo $OPTION $LINE
     fi
@@ -507,7 +507,7 @@ start_instance()
   local CHECK_ONLY=${4:-false}
   local STATUS=0
 
-  if [ $CHECK_ONLY == false ]
+  if [ "$CHECK_ONLY" == false ]
   then
     # Start the instance now that it's been configured.
     if [[ $INSTANCE_NUMBER -eq 1 ]]
@@ -553,7 +553,7 @@ start_instance()
         echo "status is $STATUS" | write_log
         report_status $STATUS
 
-        if [ $STATUS == 0 ]
+        if [ "$STATUS" == 0 ]
         then
           return 0
         fi
@@ -586,7 +586,7 @@ check_version_support()
 check_replication_slot_support()
 {
   # If replication slots have been requested, ensure we're using 9.4 or above
-  if [ $(version $PG_VERSION) -lt $(version "9.4.0") ] && [ $REPLICATION_SLOTS == true ]
+  if [ $(version $PG_VERSION) -lt $(version "9.4.0") ] && [ "$REPLICATION_SLOTS" == true ]
   then
     echo -e "$ERROR_TEXT: Replication slots (-R) are only supported in PostgreSQL 9.4"\
          "and above.  You are using PostgreSQL $PG_VERSION."
@@ -814,7 +814,7 @@ write_log()
   local OUTPUT=$1
   local NONEWLINE=$2
 
-  if [[ $NONEWLINE == 'NONEWLINE' ]]
+  if [[ "$NONEWLINE" == 'NONEWLINE' ]]
   then
     OPTION='-n'
   else
@@ -823,7 +823,7 @@ write_log()
 
   while IFS= read -r LINE
   do
-    if [[ $OUTPUT == STDOUT ]]
+    if [[ "$OUTPUT" == STDOUT ]]
     then
         echo $OPTION $LINE
     fi
@@ -950,7 +950,7 @@ status()
           fi
 
           XLOG_LOCATION=$(xlog_location ${PORTS[$I]} true)
-          if [[ $PRIMARY_LOG_LOCATION == 'N/A' ]]
+          if [[ "$PRIMARY_LOG_LOCATION" == 'N/A' ]]
           then
             XLOG_LAG='N/A'
           else
@@ -1396,7 +1396,7 @@ do
   # should cover all eventualities.
   if [[ $INSTANCE -eq 1 ]]
   then
-    if [[ $REPSTRUCT == "chain" ]]
+    if [[ "$REPSTRUCT" == "chain" ]]
     then
       MAX_CONNECTIONS=$(expr 3 + $MINIMUM_MAX_CONNECTIONS)
     else
