@@ -586,7 +586,7 @@ check_version_support()
 check_replication_slot_support()
 {
   # If replication slots have been requested, ensure we're using 9.4 or above
-  if [ $(version $PG_VERSION) -lt $(version "9.4.0") ] && $REPLICATION_SLOTS
+  if [ $(version $PG_VERSION) -lt $(version "9.4.0") ] && [ $REPLICATION_SLOTS == true ]
   then
     echo -e "$ERROR_TEXT: Replication slots (-R) are only supported in PostgreSQL 9.4"\
          "and above.  You are using PostgreSQL $PG_VERSION."
