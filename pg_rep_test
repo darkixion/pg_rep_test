@@ -1231,6 +1231,7 @@ settings_summary
 INSTANCES=$(expr $REPLICAS + 1)
 
 # Create directories.
+echo "mkdir -p -m 0700 ${DIR_LIST[@]}" | write_log
 mkdir -p -m 0700 ${DIR_LIST[@]} &>> /dev/null
 
 if [[ $? -ne 0 ]]
@@ -1320,8 +1321,8 @@ do
   elif [[ $CURRENT_STANDBY -eq 1 ]]
   then
     echo -e "Creating standby $CURRENT_STANDBY from primary in '$DIR'..." | write_log STDOUT NONEWLINE
-    echo "pg_basebackup -D $DIR -h localhost -p ${PORT_LIST[0]} -U rep_user" | write_log
-    pg_basebackup -D $DIR -h localhost -p ${PORT_LIST[0]} -U rep_user &>> $LOG_FILE
+    echo "pg_basebackup -x -D $DIR -h localhost -p ${PORT_LIST[0]} -U rep_user" | write_log
+    pg_basebackup -x -D $DIR -h localhost -p ${PORT_LIST[0]} -U rep_user &>> $LOG_FILE
 
     report_status $?
 
