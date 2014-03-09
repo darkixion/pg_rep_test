@@ -1360,35 +1360,72 @@ do
 
   build_ascii_report $INSTANCE
 
-  # Set max_wal_senders appropriately so that it has a sufficient amount to
-  # serve the standbys that will subscribe to it.
+  IFS=" "
   case $REPSTRUCT in
     fan)
-      # Only the primary will be sending WAL.
-      if [[ $INSTANCE -eq 1 ]]
-      then
-        MAX_WAL_SENDERS=$(expr $REPLICAS + 3)
-      fi
-      ;;
-    tree)
-      # Only the primary and 1st standby will be sending WAL.
       case $INSTANCE in
-        1)
-          MAX_WAL_SENDERS=3
+        1) # primary
+         # Only the primary will be sending WAL.
+         MAX_WAL_SENDERS=$(expr $REPLICAS + 3)
+         # the primary doesn't subscribe to any port or slot but will create
+         # a slot for all standbys in a fan configuration.
+          unset SUBSCRIBE_PORT
+          unset SUBSCRIBE_SLOT
+          CREATE_SLOTS=(${DIR_LIST[*]:1})
           ;;
-        2)
-          MAX_WAL_SENDERS=$(expr $REPLICAS + 2)
+        *) # all standbys
+          # all standbys subscribe directly to the primary in a fan
+          # configuration on both port and slot, but none create slots.
+          SUBSCRIBE_PORT=${PORT_LIST[0]}
+          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
+          unset CREATE_SLOTS
           ;;
       esac
       ;;
-    chain)
-      # The primary and every standby except the last will be sending WAL.
-      if [[ $INSTANCE -lt $(expr $REPLICAS + 1) ]]
-      then
-         MAX_WAL_SENDERS=3
-      fi
+    tree)
+      case $INSTANCE in
+        1) # primary
+          # Only the primary and 1st standby will be sending WAL.
+          MAX_WAL_SENDERS=3
+          unset SUBSCRIBE_PORT
+          unset SUBSCRIBE_SLOT
+          CREATE_SLOTS=${DIR_LIST[1]}
+          ;;
+        2) # 1st standby
+          MAX_WAL_SENDERS=$(expr $REPLICAS + 2)
+          SUBSCRIBE_PORT=${PORT_LIST[0]}
+          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
+          CREATE_SLOTS=(${DIR_LIST[@]:2})
+          ;;
+        *) # remaining standby
+          SUBSCRIBE_PORT=${PORT_LIST[1]}
+          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
+          unset CREATE_SLOTS
+      esac
       ;;
-  esac
+    chain)
+       # The primary and every standby except the last will be sending WAL.
+       MAX_WAL_SENDERS=3
+
+      case $INSTANCE in
+        1) #primary
+          unset SUBSCRIBE_PORT
+          unset SUBSCRIBE_SLOT
+          CREATE_SLOTS=${DIR_LIST[1]}
+          ;;
+        *)
+          SUBSCRIBE_PORT=${PORT_LIST[$INSTANCE - 2]}
+          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
+          CREATE_SLOTS=${DIR_LIST[$INSTANCE]}
+          ;;&
+        $INSTANCES) # last standby
+          unset MAX_WAL_SENDERS
+          unset CREATE_SLOTS
+          ;;
+      esac
+      ;;
+    esac
+  IFS=","
 
   # Configure max_connections to accommodate max_wal_senders.  Note that this
   # value must be identical between primary and any standby, but the standby
@@ -1406,64 +1443,6 @@ do
   fi
   echo -e "max_connections = $MAX_CONNECTIONS        # This needs to accommodate max_wal_senders connections in addition to\n" \
           "                          # regular connections.\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
-
-  IFS=" "
-  case $REPSTRUCT in
-    fan)
-      case $INSTANCE in
-        1) # primary
-         # the primary doesn't subscribe to any port or slot but will create
-         # a slot for all standbys in a fan configuration.
-          unset SUBSCRIBE_PORT
-          unset SUBSCRIBE_SLOT
-          CREATE_SLOTS=(${DIR_LIST[*]:1})
-          ;;
-        *) # all standbys
-          # all standbys subscribe directly to the primary in a tree
-          # configuration on both port and slot, but none create slots.
-          SUBSCRIBE_PORT=${PORT_LIST[0]}
-          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
-          unset CREATE_SLOTS
-          ;;
-      esac
-      ;;
-    tree)
-      case $INSTANCE in
-        1) # primary
-          unset SUBSCRIBE_PORT
-          unset SUBSCRIBE_SLOT
-          CREATE_SLOTS=${DIR_LIST[1]}
-          ;;
-        2) # 1st standby
-          SUBSCRIBE_PORT=${PORT_LIST[0]}
-          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
-          CREATE_SLOTS=(${DIR_LIST[@]:2})
-          ;;
-        *) # remaining standby
-          SUBSCRIBE_PORT=${PORT_LIST[1]}
-          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
-          unset CREATE_SLOTS
-      esac
-      ;;
-    chain)
-      case $INSTANCE in
-        1) #primary
-          unset SUBSCRIBE_PORT
-          unset SUBSCRIBE_SLOT
-          CREATE_SLOTS=${DIR_LIST[1]}
-          ;;
-        *)
-          SUBSCRIBE_PORT=${PORT_LIST[$INSTANCE - 2]}
-          SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
-          CREATE_SLOTS=${DIR_LIST[$INSTANCE]}
-          ;;&
-        $INSTANCES) # last standby
-          unset CREATE_SLOTS
-          ;;
-      esac
-      ;;
-    esac
-  IFS=","
 
   echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can accept connections.\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
