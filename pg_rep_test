@@ -146,7 +146,7 @@ generate_ports()
     then
       continue; # port in use, so try next one
     else
-      AUTO_PORT_LIST+=($PORT)
+      AUTO_PORT_LIST=(${AUTO_PORT_LIST[@]} $PORT)
       PORT_COUNT=$[PORT_COUNT + 1];
     fi
   done
@@ -252,10 +252,13 @@ request_params()
   do
     local INPUT_PORTS=()
 
+    IFS=","
     echo # newline
     read -p "Input comma-separated list of ports: [default:${PORT_LIST[*]}] " INPUT_PORTS
+    IFS=" "
 
     INPUT_PORTS=(${INPUT_PORTS[*]:-${PORT_LIST[@]}})
+
     check_port_count "${INPUT_PORTS[*]}"
 
     if [[ $? -eq 0 ]]
@@ -640,6 +643,7 @@ check_port_count()
 
   # Ensure that the number of ports equals the number of replicas plus the
   # primary.
+
   if [[ -n $REPLICAS ]] && [[ -n $INPUT_PORT_LIST ]] && [[ ${#INPUT_PORT_LIST[*]} -ne $(expr $REPLICAS + 1) ]]
   then
     echo -e "$ERROR_TEXT: The number of ports provided does not match the number of replicas + primary."
@@ -735,7 +739,6 @@ check_archive_dir_usage()
 
 create_tool()
 {
-IFS=" "
 FILE_HEADER=$(cat <<TOOL_CONFIG
 #!/bin/bash
 
@@ -746,7 +749,6 @@ ARCHIVE_DIR=${ARCHIVE_DIR:-''}
 TOOL_CONFIG
 )
 
-IFS=""
 FILE_BODY=$(cat <<'TOOL_FILE'
 usage()
 {
@@ -1152,7 +1154,6 @@ echo -e "Run $YELLOW./$TOOL_FILENAME -?$PLAIN for help with using it."
 
 
 
-IFS=","
 PORT_LIST=($PORTS)
 DIR_LIST=($DATADIRS)
 
@@ -1207,8 +1208,8 @@ fi
 
 check_archive_dir_usage $ARCHIVE_DIR true
 
-# Set default values where necessary
 
+# Set default values where necessary
 DIR_LIST=(${DIR_LIST[*]:-${AUTO_DIR_LIST[@]}})
 ENABLE_LOGS=${ENABLE_LOGS:-false}
 INTERACTIVE=${INTERACTIVE:-false}
@@ -1222,9 +1223,7 @@ check_ports_numeric "${PORT_LIST[*]}" true
 
 #### Set up instances ####
 
-IFS=" "
 echo "Command issued: $0 $*" > $LOG_FILE
-IFS=","
 
 settings_summary
 
@@ -1360,10 +1359,9 @@ do
 
   build_ascii_report $INSTANCE
 
-  IFS=" "
-  case $REPSTRUCT in
+  case "$REPSTRUCT" in
     fan)
-      case $INSTANCE in
+      case "$INSTANCE" in
         1) # primary
          # Only the primary will be sending WAL.
          MAX_WAL_SENDERS=$(expr $REPLICAS + 3)
@@ -1383,7 +1381,7 @@ do
       esac
       ;;
     tree)
-      case $INSTANCE in
+      case "$INSTANCE" in
         1) # primary
           # Only the primary and 1st standby will be sending WAL.
           MAX_WAL_SENDERS=3
@@ -1401,13 +1399,14 @@ do
           SUBSCRIBE_PORT=${PORT_LIST[1]}
           SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
           unset CREATE_SLOTS
+          ;;
       esac
       ;;
     chain)
        # The primary and every standby except the last will be sending WAL.
        MAX_WAL_SENDERS=3
 
-      case $INSTANCE in
+      case "$INSTANCE" in
         1) #primary
           unset SUBSCRIBE_PORT
           unset SUBSCRIBE_SLOT
@@ -1417,15 +1416,14 @@ do
           SUBSCRIBE_PORT=${PORT_LIST[$INSTANCE - 2]}
           SUBSCRIBE_SLOT=${DIR_LIST[$INSTANCE - 1]}
           CREATE_SLOTS=${DIR_LIST[$INSTANCE]}
-          ;;&
-        $INSTANCES) # last standby
+          ;;
+        "$INSTANCES") # last standby
           unset MAX_WAL_SENDERS
           unset CREATE_SLOTS
           ;;
       esac
       ;;
-    esac
-  IFS=","
+  esac
 
   # Configure max_connections to accommodate max_wal_senders.  Note that this
   # value must be identical between primary and any standby, but the standby
@@ -1485,7 +1483,7 @@ do
     echo "primary_conninfo = 'host=127.0.0.1 user=rep_user port=$SUBSCRIBE_PORT application_name=standby$CURRENT_STANDBY'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
     if $REPLICATION_SLOTS
     then
-      echo "primary_slotname = '"$SUBSCRIBE_SLOT"_physical_slot'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
+      echo "primary_slot_name = '"$SUBSCRIBE_SLOT"_physical_slot'" 2>> $LOG_FILE 1>> $DIR/recovery.conf
     fi
   fi
 
