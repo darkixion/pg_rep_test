@@ -1,35 +1,34 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
-    <meta charset='utf-8'>
+    <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="chrome=1">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-    <link href='https://fonts.googleapis.com/css?family=Architects+Daughter' rel='stylesheet' type='text/css'>
-    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen" />
-    <link rel="stylesheet" type="text/css" href="stylesheets/pygment_trac.css" media="screen" />
-    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print" />
+    <title>pg_rep_test by darkixion</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <script src="javascripts/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 
     <!--[if lt IE 9]>
     <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
     <![endif]-->
-
-    <title>pg_rep_test by darkixion</title>
   </head>
-
   <body>
-    <header>
-      <div class="inner">
+    <div class="wrapper">
+      <header>
         <h1>pg_rep_test</h1>
-        <h2>A tool to assist with setting up replication in PostgreSQL 9.1+ for the purposes of testing or demonstration.</h2>
-        <a href="https://github.com/darkixion/pg_rep_test" class="button"><small>View project on</small>GitHub</a>
-      </div>
-    </header>
-
-    <div id="content-wrapper">
-      <div class="inner clearfix">
-        <section id="main-content">
-          <h1>
-<a name="pg_rep_test" class="anchor" href="#pg_rep_test"><span class="octicon octicon-link"></span></a>pg_rep_test</h1>
+        <p>A tool to assist with setting up replication in PostgreSQL 9.1+ for the purposes of testing or demonstration.</p>
+        <p class="view"><a href="https://github.com/darkixion/pg_rep_test">View the Project on GitHub <small>darkixion/pg_rep_test</small></a></p>
+        <ul>
+          <li><a href="https://github.com/darkixion/pg_rep_test/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/darkixion/pg_rep_test/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/darkixion/pg_rep_test">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>
+<a id="pg_rep_test" class="anchor" href="#pg_rep_test" aria-hidden="true"><span class="octicon octicon-link"></span></a>pg_rep_test</h1>
 
 <p>A tool to assist with setting up replication in PostgreSQL 9.1+ for the
 purposes of testing or demonstration.</p>
@@ -69,7 +68,7 @@ Options:
 want.</p>
 
 <h2>
-<a name="example" class="anchor" href="#example"><span class="octicon octicon-link"></span></a>Example</h2>
+<a id="example" class="anchor" href="#example" aria-hidden="true"><span class="octicon octicon-link"></span></a>Example</h2>
 
 <p>To create 5 standbys, the first one connecting to the primary, and the rest
 connecting to the first standby, you would run the following:</p>
@@ -99,12 +98,12 @@ configuration they were created in and the port numbers used:</p>
 </code></pre>
 
 <h2>
-<a name="replication-structures" class="anchor" href="#replication-structures"><span class="octicon octicon-link"></span></a>Replication structures</h2>
+<a id="replication-structures" class="anchor" href="#replication-structures" aria-hidden="true"><span class="octicon octicon-link"></span></a>Replication structures</h2>
 
 <p>These are ASCII-diagrams of the 3 replication structures.</p>
 
 <h3>
-<a name="fan" class="anchor" href="#fan"><span class="octicon octicon-link"></span></a>Fan</h3>
+<a id="fan" class="anchor" href="#fan" aria-hidden="true"><span class="octicon octicon-link"></span></a>Fan</h3>
 
 <pre><code>[Primary (5530)]
     |
@@ -118,7 +117,7 @@ configuration they were created in and the port numbers used:</p>
 </code></pre>
 
 <h3>
-<a name="tree" class="anchor" href="#tree"><span class="octicon octicon-link"></span></a>Tree</h3>
+<a id="tree" class="anchor" href="#tree" aria-hidden="true"><span class="octicon octicon-link"></span></a>Tree</h3>
 
 <pre><code>[Primary (5530)]
     |
@@ -132,7 +131,7 @@ configuration they were created in and the port numbers used:</p>
 </code></pre>
 
 <h3>
-<a name="chain" class="anchor" href="#chain"><span class="octicon octicon-link"></span></a>Chain</h3>
+<a id="chain" class="anchor" href="#chain" aria-hidden="true"><span class="octicon octicon-link"></span></a>Chain</h3>
 
 <pre><code>[Primary (5530)]
     |
@@ -146,7 +145,7 @@ configuration they were created in and the port numbers used:</p>
 </code></pre>
 
 <h2>
-<a name="notes" class="anchor" href="#notes"><span class="octicon octicon-link"></span></a>Notes</h2>
+<a id="notes" class="anchor" href="#notes" aria-hidden="true"><span class="octicon octicon-link"></span></a>Notes</h2>
 
 <p>You can run pg_rep_test without any parameters which will then just create a
 primary with a single standby.</p>
@@ -172,7 +171,7 @@ instances (unless suppressed with -T).  The following section describes its
 use.</p>
 
 <h1>
-<a name="toolnpgrep_test" class="anchor" href="#toolnpgrep_test"><span class="octicon octicon-link"></span></a>tool(<em>n).pg</em>rep_test</h1>
+<a id="tool_npg_rep_test" class="anchor" href="#tool_npg_rep_test" aria-hidden="true"><span class="octicon octicon-link"></span></a>tool(_n).pg_rep_test</h1>
 
 <p>A maintenance tool script to manage sets of instances created by pg_rep_test.
 The name of the tool is unique to a set of instances.</p>
@@ -198,7 +197,7 @@ ACTION can be one of:
 </code></pre>
 
 <h2>
-<a name="example-1" class="anchor" href="#example-1"><span class="octicon octicon-link"></span></a>Example</h2>
+<a id="example-1" class="anchor" href="#example-1" aria-hidden="true"><span class="octicon octicon-link"></span></a>Example</h2>
 
 <p>To stop all instances managed by the tool script immediately, you would run
 the following:</p>
@@ -227,7 +226,7 @@ the following:</p>
 </code></pre>
 
 <h2>
-<a name="notes-1" class="anchor" href="#notes-1"><span class="octicon octicon-link"></span></a>Notes</h2>
+<a id="notes-1" class="anchor" href="#notes-1" aria-hidden="true"><span class="octicon octicon-link"></span></a>Notes</h2>
 
 <p>If a set of instances is created by pg_rep_test and a tool.pg_rep_test script
 already exists in the same directory, the tool script will be given a distinct
@@ -237,31 +236,19 @@ first script is created, subsequent ones will be named tool_1.pg_rep_test,
 tool_2... tool_3... etc.</p>
 
 <h2>
-<a name="license" class="anchor" href="#license"><span class="octicon octicon-link"></span></a>License</h2>
+<a id="license" class="anchor" href="#license" aria-hidden="true"><span class="octicon octicon-link"></span></a>License</h2>
 
 <p>pg_rep_test is licensed under The PostgreSQL License
 (<a href="http://www.opensource.org/licenses/postgresql">http://www.opensource.org/licenses/postgresql</a>),
 which is closely related to the BSD license.</p>
-        </section>
-
-        <aside id="sidebar">
-          <a href="https://github.com/darkixion/pg_rep_test/zipball/master" class="button">
-            <small>Download</small>
-            .zip file
-          </a>
-          <a href="https://github.com/darkixion/pg_rep_test/tarball/master" class="button">
-            <small>Download</small>
-            .tar.gz file
-          </a>
-
-          <p class="repo-owner"><a href="https://github.com/darkixion/pg_rep_test"></a> is maintained by <a href="https://github.com/darkixion">darkixion</a>.</p>
-
-          <p>This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the Architect theme by <a href="https://twitter.com/jasonlong">Jason Long</a>.</p>
-        </aside>
-      </div>
+      </section>
     </div>
-
-            <script type="text/javascript">
+    <footer>
+      <p>Project maintained by <a href="https://github.com/darkixion">darkixion</a></p>
+      <p>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></p>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+              <script type="text/javascript">
             var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
             document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
           </script>
