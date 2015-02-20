@@ -749,6 +749,7 @@ ARCHIVE_DIR=${ARCHIVE_DIR:-''}
 TOOL_CONFIG
 )
 
+IFS=""
 FILE_BODY=$(cat <<'TOOL_FILE'
 usage()
 {
@@ -1126,7 +1127,7 @@ case $ACTION in
   status)
     status
     ;;
-  * )
+  *)
     echo 'Error: Invalid action '$ACTION' specified.'
     usage
     exit 1
@@ -1134,6 +1135,7 @@ esac
 TOOL_FILE
 )
 
+IFS=" "
 while [[ $(ls -A "tool"${SUBSET:+'_'$SUBSET}".pg_rep_test" 2> /dev/null) ]]
 do
   ((SUBSET++))
