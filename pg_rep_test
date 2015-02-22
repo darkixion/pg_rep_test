@@ -30,7 +30,7 @@ read PG_VERSION <<<$(postgres -V | grep -Po '\d+?\.\d+?(\.\d+)?')
 
 usage()
 {
-cat << OPTIONSDOC
+cat <<OPTIONSDOC
 Usage:
   $(basename $0) [OPTION]
 
@@ -252,10 +252,10 @@ request_params()
   do
     local INPUT_PORTS=()
 
-    IFS=","
+    local IFS=","
     echo # newline
     read -p "Input comma-separated list of ports: [default:${PORT_LIST[*]}] " INPUT_PORTS
-    IFS=" "
+    local IFS=" "
 
     INPUT_PORTS=(${INPUT_PORTS[*]:-${PORT_LIST[@]}})
 
@@ -739,403 +739,403 @@ check_archive_dir_usage()
 
 create_tool()
 {
-FILE_HEADER=$(cat <<TOOL_CONFIG
-#!/bin/bash
 
-# instance data associated with this maintenance script
-DATADIRS=(${DIR_LIST[*]})
-PORTS=(${PORT_LIST[*]})
-ARCHIVE_DIR=${ARCHIVE_DIR:-''}
+FILE_HEADER=$(cat <<-TOOL_CONFIG
+	#!/bin/bash
+
+	# instance data associated with this maintenance script
+	DATADIRS=(${DIR_LIST[*]})
+	PORTS=(${PORT_LIST[*]})
+	ARCHIVE_DIR=${ARCHIVE_DIR:-''}
 TOOL_CONFIG
 )
 
-IFS=""
-FILE_BODY=$(cat <<'TOOL_FILE'
-usage()
-{
-cat << OPTIONSDOC
+FILE_BODY=$(cat <<-'TOOL_FILE'
+	usage()
+	{
+	cat << OPTIONSDOC
 
-Usage:
-  $0 [OPTION] [ACTION]
+	Usage:
+	  $0 [OPTION] [ACTION]
 
-Options:
-  -m MODE                shutdown mode (smart, fast or immediate); must be
-                         used with the 'stop' action
-  -l LOGFILE             write log messages to a file
-  -?                     show this help then exit
+	Options:
+	  -m MODE                shutdown mode (smart, fast or immediate); must be
+	                         used with the 'stop' action
+	  -l LOGFILE             write log messages to a file
+	  -?                     show this help then exit
 
-ACTION can be one of:
-  status                 list all instances, their ports, data directories and
-                         whether they are running or not
-  start                  start all instances
-  stop                   stops all instances, which can be used with the -m 
-                         option
-  restart                restart all instances
-  destroy                stops (if started) and deletes all instances; also
-                         deletes this maintenance script
-OPTIONSDOC
-}
+	ACTION can be one of:
+	  status                 list all instances, their ports, data directories and
+	                         whether they are running or not
+	  start                  start all instances
+	  stop                   stops all instances, which can be used with the -m 
+	                         option
+	  restart                restart all instances
+	  destroy                stops (if started) and deletes all instances; also
+	                         deletes this maintenance script
+	OPTIONSDOC
+	}
 
-# Configure colour variables if outputting to the terminal
-if [ -t 1 ]
-then
-  BLUE='\e[1;94m'
-  GREEN='\e[1;32m'
-  RED='\e[1;31m'
-  PLAIN=$(tput sgr0)
-fi
+	# Configure colour variables if outputting to the terminal
+	if [ -t 1 ]
+	then
+	  BLUE='\e[1;94m'
+	  GREEN='\e[1;32m'
+	  RED='\e[1;31m'
+	  PLAIN=$(tput sgr0)
+	fi
 
-while getopts “m:l:?” OPTION
-do
-  case $OPTION in
-    m)
-      MODE=$OPTARG
-      ;;
-    l)
-      LOG_FILE=$OPTARG
-      ;;
-    ?)
-      usage
-      exit 1
-      ;;
-  esac
-done
+	while getopts “m:l:?” OPTION
+	do
+	  case $OPTION in
+		m)
+		  MODE=$OPTARG
+		  ;;
+		l)
+		  LOG_FILE=$OPTARG
+		  ;;
+		?)
+		  usage
+		  exit 1
+		  ;;
+	  esac
+	done
 
-ACTION=${!#}
-MODE=${MODE:-'smart'}
+	ACTION=${!#}
+	MODE=${MODE:-'smart'}
 
-# Set default for log output
-if [[ -z $LOG_FILE ]]
-then
-  LOG_FILE='/dev/null'
-fi
+	# Set default for log output
+	if [[ -z $LOG_FILE ]]
+	then
+	  LOG_FILE='/dev/null'
+	fi
 
-# Output text to a log file, prepending the date and time.
-# Parameter 1 (optional): Contains 'STDOUT' if the entry should be displayed.
-write_log()
-{
-  local OUTPUT=$1
-  local NONEWLINE=$2
+	# Output text to a log file, prepending the date and time.
+	# Parameter 1 (optional): Contains 'STDOUT' if the entry should be displayed.
+	write_log()
+	{
+	  local OUTPUT=$1
+	  local NONEWLINE=$2
 
-  if [[ "$NONEWLINE" == 'NONEWLINE' ]]
-  then
-    OPTION='-n'
-  else
-    OPTION=''
-  fi
+	  if [[ "$NONEWLINE" == 'NONEWLINE' ]]
+	  then
+		OPTION='-n'
+	  else
+		OPTION=''
+	  fi
 
-  while IFS= read -r LINE
-  do
-    if [[ "$OUTPUT" == STDOUT ]]
-    then
-        echo $OPTION $LINE
-    fi
+	  while IFS= read -r LINE
+	  do
+		if [[ "$OUTPUT" == STDOUT ]]
+		then
+			echo $OPTION $LINE
+		fi
 
-    echo $(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE >> $LOG_FILE
-  done
-}
+		echo $(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $LINE >> $LOG_FILE
+	  done
+	}
 
-# Return the number of bytes an XLog position represents.
-xlog_in_bytes()
-{
-	local XLOGID="${1%%/*}"
-	local OFFSET="${1##*/}"
-	echo $((0xFFFFFF * 0x$XLOGID + 0x$OFFSET))
-}
+	# Return the number of bytes an XLog position represents.
+	xlog_in_bytes()
+	{
+		local XLOGID="${1%%/*}"
+		local OFFSET="${1##*/}"
+		echo $((0xFFFFFF * 0x$XLOGID + 0x$OFFSET))
+	}
 
-# Return the XLog location of an instance given a port and whether it's a
-# standby.
-xlog_location()
-{
-  local PORT=$1
-  local STANDBY=$2
+	# Return the XLog location of an instance given a port and whether it's a
+	# standby.
+	xlog_location()
+	{
+	  local PORT=$1
+	  local STANDBY=$2
 
-  case ${STANDBY:-$(in_recovery $PORT)} in
-    true)
-      XLOG_FUNCTION='pg_last_xlog_replay_location'
-      ;;
-    false)
-      XLOG_FUNCTION='pg_current_xlog_location'
-      ;;
-    *)
-      echo "N/A"
-      return 0
-      ;;
-  esac
+	  case ${STANDBY:-$(in_recovery $PORT)} in
+		true)
+		  XLOG_FUNCTION='pg_last_xlog_replay_location'
+		  ;;
+		false)
+		  XLOG_FUNCTION='pg_current_xlog_location'
+		  ;;
+		*)
+		  echo "N/A"
+		  return 0
+		  ;;
+	  esac
 
-  echo 'psql -p '"$PORT"' -Atc "'"SELECT $XLOG_FUNCTION();"'" postgres 2>> /dev/null' | write_log
-  echo $(psql -p $PORT -Atc "SELECT $XLOG_FUNCTION();" postgres 2>> $LOG_FILE)
-}
+	  echo 'psql -p '"$PORT"' -Atc "'"SELECT $XLOG_FUNCTION();"'" postgres 2>> /dev/null' | write_log
+	  echo $(psql -p $PORT -Atc "SELECT $XLOG_FUNCTION();" postgres 2>> $LOG_FILE)
+	}
 
-# Given the port of a standby, find the port of the primary that the standby
-# is subscribing to.
-get_primary_port()
-{
-  local STANDBY_PORT=$1
-  local PRIMARY_PORT_QUERY="\
-            WITH q AS (\
-              SELECT * FROM regexp_split_to_table( pg_read_file('recovery.conf'), E'\\\\n') AS x\
-          )\
-          SELECT regexp_replace(x, '.*port=([0-9]*).*', E'\\\\1')\
-          FROM q\
-          WHERE x ~ '^[[:space:]]*primary_conninfo';"
-  echo 'psql -p $STANDBY_PORT -Atc $PRIMARY_PORT_QUERY postgres 2>> /dev/null' | write_log
-  echo $(psql -p $STANDBY_PORT -Atc $PRIMARY_PORT_QUERY postgres 2>> /dev/null)
-}
+	# Given the port of a standby, find the port of the primary that the standby
+	# is subscribing to.
+	get_primary_port()
+	{
+	  local STANDBY_PORT=$1
+	  local PRIMARY_PORT_QUERY="\
+				WITH q AS (\
+				  SELECT "*" FROM regexp_split_to_table( pg_read_file('recovery.conf'), E'\\\\n') AS x\
+			  )\
+			  SELECT regexp_replace(x, '.*port=([0-9]*).*', E'\\\\1')\
+			  FROM q\
+			  WHERE x ~ '^[[:space:]]*primary_conninfo';"
+	  echo 'psql -p $STANDBY_PORT -Atc $PRIMARY_PORT_QUERY postgres 2>> /dev/null' | write_log
+	  echo $(psql -p $STANDBY_PORT -Atc $PRIMARY_PORT_QUERY postgres 2>> /dev/null)
+	}
 
-# Determine whether the specified port is in recovery mode.
-in_recovery()
-{
-  local TARGET_PORT=$1
-  echo "psql -p $TARGET_PORT -Atc 'SELECT pg_is_in_recovery();' postgres 2>> /dev/null" | write_log
-  local RECOVERY=$(psql -p $TARGET_PORT -Atc 'SELECT pg_is_in_recovery();' postgres 2>> $LOG_FILE)
-  local STATUS=$?
+	# Determine whether the specified port is in recovery mode.
+	in_recovery()
+	{
+	  local TARGET_PORT=$1
+	  echo "psql -p $TARGET_PORT -Atc 'SELECT pg_is_in_recovery();' postgres 2>> /dev/null" | write_log
+	  local RECOVERY=$(psql -p $TARGET_PORT -Atc 'SELECT pg_is_in_recovery();' postgres 2>> $LOG_FILE)
+	  local STATUS=$?
 
-  case "$RECOVERY" in
-    "t") echo true;;
-    "f") echo false;;
-    *) # return nothing (i.e. starting up)
-    ;;
-  esac
-}
+	  case "$RECOVERY" in
+		"t") echo true;;
+		"f") echo false;;
+		*) # return nothing (i.e. starting up)
+		;;
+	  esac
+	}
 
-# Based on the status provided, reports SUCCESS or FAILED
-# Parameter 1: The exit code of the process being reported
-report_status()
-{
-  local STATUS=$1
+	# Based on the status provided, reports SUCCESS or FAILED
+	# Parameter 1: The exit code of the process being reported
+	report_status()
+	{
+	  local STATUS=$1
 
-  if [[ $STATUS -eq 0 ]] && [[ -n $STATUS ]]
-  then
-    echo -ne $GREEN # green
-    echo -e ' SUCCESS!' | write_log STDOUT NONEWLINE
-  else
-    echo -ne $RED # red
-    echo -e ' FAILED!' | write_log STDOUT NONEWLINE
-  fi
-  echo $PLAIN # reset colours
+	  if [[ $STATUS -eq 0 ]] && [[ -n $STATUS ]]
+	  then
+		echo -ne $GREEN # green
+		echo -e ' SUCCESS!' | write_log STDOUT NONEWLINE
+	  else
+		echo -ne $RED # red
+		echo -e ' FAILED!' | write_log STDOUT NONEWLINE
+	  fi
+	  echo $PLAIN # reset colours
 
-  return $STATUS
-}
+	  return $STATUS
+	}
 
-status()
-{
-  local STATUS=''
-  local STATUS_COLOUR=''
-  local PRIMARY_PORT=''
-  local IN_RECOVERY=1
+	status()
+	{
+	  local STATUS=''
+	  local STATUS_COLOUR=''
+	  local PRIMARY_PORT=''
+	  local IN_RECOVERY=1
 
-  # Output summary table title.
-  local TABLE_TITLE=$(printf " %-${INSTANCE_NAME_LENGTH}s | %-${INSTANCE_PORT_LENGTH}s | Primary Port | Status      | XLog location | Replication lag (bytes)" "Instance" "Port")
-  echo "$TABLE_TITLE"
-  printf "%$(expr ${#TABLE_TITLE})s\n" |tr " " "-"
+	  # Output summary table title.
+	  local TABLE_TITLE=$(printf " %-${INSTANCE_NAME_LENGTH}s | %-${INSTANCE_PORT_LENGTH}s | Primary Port | Status      | XLog location | Replication lag (bytes)" "Instance" "Port")
+	  echo "$TABLE_TITLE"
+	  printf "%$(expr ${#TABLE_TITLE})s\n" |tr " " "-"
 
-  for (( I=0; I < ${#DATADIRS[@]}; I++ ))
-  do
-    echo "pg_ctl status -D ${DATADIRS[$I]}" | write_log
-    pg_ctl status -D ${DATADIRS[$I]} >> $LOG_FILE
+	  for (( I=0; I < ${#DATADIRS[@]}; I++ ))
+	  do
+		echo "pg_ctl status -D ${DATADIRS[$I]}" | write_log
+		pg_ctl status -D ${DATADIRS[$I]} >> $LOG_FILE
 
-    case $? in
-      0)
-        STATUS_COLOUR=$GREEN
+		case $? in
+		  0)
+			STATUS_COLOUR=$GREEN
 
-        case $(in_recovery ${PORTS[$I]}) in
-        true)
-          STATUS='IN RECOVERY'
-          PRIMARY_PORT=$(get_primary_port ${PORTS[$I]})
+			case $(in_recovery ${PORTS[$I]}) in
+			true)
+			  STATUS='IN RECOVERY'
+			  PRIMARY_PORT=$(get_primary_port ${PORTS[$I]})
 
-          echo 'psql -h localhost -p '"$PRIMARY_PORT"' -c "SELECT 1;" postgres' | write_log
-          psql -h localhost -p $PRIMARY_PORT -c 'SELECT 1;' postgres &>> $LOG_FILE
+			  echo 'psql -h localhost -p '"$PRIMARY_PORT"' -c "SELECT 1;" postgres' | write_log
+			  psql -h localhost -p $PRIMARY_PORT -c 'SELECT 1;' postgres &>> $LOG_FILE
 
-          if [[ $? -eq 0 ]]
-          then
-            PRIMARY_XLOG_LOCATION=$(xlog_location $PRIMARY_PORT)
-          fi
+			  if [[ $? -eq 0 ]]
+			  then
+				PRIMARY_XLOG_LOCATION=$(xlog_location $PRIMARY_PORT)
+			  fi
 
-          XLOG_LOCATION=$(xlog_location ${PORTS[$I]} true)
-          if [[ "$PRIMARY_LOG_LOCATION" == 'N/A' ]]
-          then
-            XLOG_LAG='N/A'
-          else
-            XLOG_LAG=$(expr $(xlog_in_bytes $PRIMARY_XLOG_LOCATION) - $(xlog_in_bytes $XLOG_LOCATION))
-          fi
-          ;;
-        false)
-          STATUS='ONLINE'
+			  XLOG_LOCATION=$(xlog_location ${PORTS[$I]} true)
+			  if [[ "$PRIMARY_LOG_LOCATION" == 'N/A' ]]
+			  then
+				XLOG_LAG='N/A'
+			  else
+				XLOG_LAG=$(expr $(xlog_in_bytes $PRIMARY_XLOG_LOCATION) - $(xlog_in_bytes $XLOG_LOCATION))
+			  fi
+			  ;;
+			false)
+			  STATUS='ONLINE'
 
-          PRIMARY_PORT=''
-          PRIMARY_XLOG_LOCATION=$(xlog_location ${PORTS[$I]} false)
+			  PRIMARY_PORT=''
+			  PRIMARY_XLOG_LOCATION=$(xlog_location ${PORTS[$I]} false)
 
-          XLOG_LOCATION=$PRIMARY_XLOG_LOCATION
-          XLOG_LAG=''
-          ;;
-        *)
-          STATUS='STARTING UP'
-          PRIMARY_PORT="N/A"
-          XLOG_LOCATION="N/A"
-          XLOG_LAG=''
-        esac
-        ;;
-      3)
-        local STATUS='OFFLINE'
-        local STATUS_COLOUR=$RED
-        XLOG_LOCATION='N/A'
-        PRIMARY_PORT='N/A'
-        ;;
-    esac
+			  XLOG_LOCATION=$PRIMARY_XLOG_LOCATION
+			  XLOG_LAG=''
+			  ;;
+			*)
+			  STATUS='STARTING UP'
+			  PRIMARY_PORT="N/A"
+			  XLOG_LOCATION="N/A"
+			  XLOG_LAG=''
+			esac
+			;;
+		  3)
+			local STATUS='OFFLINE'
+			local STATUS_COLOUR=$RED
+			XLOG_LOCATION='N/A'
+			PRIMARY_PORT='N/A'
+			;;
+		esac
 
-    printf " %-${INSTANCE_NAME_LENGTH}s | %-${INSTANCE_PORT_LENGTH}s | %-12s | $STATUS_COLOUR%-11s$PLAIN | %-13s | %'d\n" "${DATADIRS[$I]}" "${PORTS[$I]}" "$PRIMARY_PORT" "$STATUS" "$XLOG_LOCATION" "$XLOG_LAG"
-    unset STATUS STATUS_COLOUR XLOG_LAG PRIMARY_XLOG_LOCATION
-  done
-}
+		printf " %-${INSTANCE_NAME_LENGTH}s | %-${INSTANCE_PORT_LENGTH}s | %-12s | $STATUS_COLOUR%-11s$PLAIN | %-13s | %'d\n" "${DATADIRS[$I]}" "${PORTS[$I]}" "$PRIMARY_PORT" "$STATUS" "$XLOG_LOCATION" "$XLOG_LAG"
+		unset STATUS STATUS_COLOUR XLOG_LAG PRIMARY_XLOG_LOCATION
+	  done
+	}
 
-destroy()
-{
-  for INSTANCE in ${DATADIRS[@]}
-  do
-    pg_ctl -D $INSTANCE status >> $LOG_FILE
-    if [[ $? -eq 0 ]]
-    then
-      # Stop the instance before we delete it.
-      echo -e "Stopping instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
-      echo 'pg_ctl stop -D '$INSTANCE' -W -m immediate' | write_log
-      pg_ctl stop -D $INSTANCE -W -m immediate &>> $LOG_FILE
-      sync
+	destroy()
+	{
+	  for INSTANCE in ${DATADIRS[@]}
+	  do
+		pg_ctl -D $INSTANCE status >> $LOG_FILE
+		if [[ $? -eq 0 ]]
+		then
+		  # Stop the instance before we delete it.
+		  echo -e "Stopping instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
+		  echo 'pg_ctl stop -D '$INSTANCE' -W -m immediate' | write_log
+		  pg_ctl stop -D $INSTANCE -W -m immediate &>> $LOG_FILE
+		  sync
 
-      # Get the status to ensure it has stopped.
-      echo "pg_ctl status -D $INSTANCE" | write_log
-      pg_ctl status -D $INSTANCE >> $LOG_FILE
-      if [[ $? -eq 3 ]]
-      then
-        report_status '0'
-      fi
-    else
-      echo "Instance in '$INSTANCE' already stopped." | write_log STDOUT
-    fi
+		  # Get the status to ensure it has stopped.
+		  echo "pg_ctl status -D $INSTANCE" | write_log
+		  pg_ctl status -D $INSTANCE >> $LOG_FILE
+		  if [[ $? -eq 3 ]]
+		  then
+			report_status '0'
+		  fi
+		else
+		  echo "Instance in '$INSTANCE' already stopped." | write_log STDOUT
+		fi
 
-    # Delete the current instance.
-    echo -e "Deleting instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
-    echo 'rm -r '$INSTANCE'/*' | write_log
-    rm -r $INSTANCE/* &>> $LOG_FILE
-    echo 'rmdir '$INSTANCE | write_log
-    rmdir $INSTANCE &>> $LOG_FILE
-    report_status $?
-  done
+		# Delete the current instance.
+		echo -e "Deleting instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
+		echo 'rm -r '$INSTANCE'/*' | write_log
+		rm -r $INSTANCE/* &>> $LOG_FILE
+		echo 'rmdir '$INSTANCE | write_log
+		rmdir $INSTANCE &>> $LOG_FILE
+		report_status $?
+	  done
 
-  # Delete archive directory recursively, if it exists.
-  if [[ $ARCHIVE_DIR != '' ]]
-  then
-    echo -e "Deleting archive in '$ARCHIVE_DIR'..." | write_log STDOUT NONEWLINE
-    echo 'rm -rf '$ARCHIVE_DIR'/*' | write_log
-    rm -rf $ARCHIVE_DIR/* &>> $LOG_FILE
-    echo 'rmdir '$ARCHIVE_DIR | write_log
-    rmdir $ARCHIVE_DIR &>> $LOG_FILE
-    report_status $?
-  fi
+	  # Delete archive directory recursively, if it exists.
+	  if [[ $ARCHIVE_DIR != '' ]]
+	  then
+		echo -e "Deleting archive in '$ARCHIVE_DIR'..." | write_log STDOUT NONEWLINE
+		echo 'rm -rf '$ARCHIVE_DIR'/*' | write_log
+		rm -rf $ARCHIVE_DIR/* &>> $LOG_FILE
+		echo 'rmdir '$ARCHIVE_DIR | write_log
+		rmdir $ARCHIVE_DIR &>> $LOG_FILE
+		report_status $?
+	  fi
 
-  # Delete the tool script itself
-  echo -e "Deleting this tool script..." | write_log STDOUT NONEWLINE
-  echo 'rm '$0 | write_log
-  rm $0 &>> $LOG_FILE
-  report_status $?
-}
+	  # Delete the tool script itself
+	  echo -e "Deleting this tool script..." | write_log STDOUT NONEWLINE
+	  echo 'rm '$0 | write_log
+	  rm $0 &>> $LOG_FILE
+	  report_status $?
+	}
 
-start()
-{
-  for INSTANCE in ${DATADIRS[@]}
-  do
-    pg_ctl -D $INSTANCE status >> $LOG_FILE
-    if [[ $? -ne '0' ]]
-    then
-      echo -e "Starting instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
-      echo 'pg_ctl start -D '$INSTANCE | write_log
-      pg_ctl start -D $INSTANCE &>> $LOG_FILE
-      sync
-      echo "pg_ctl status -D $INSTANCE" | write_log
-      pg_ctl status -D $INSTANCE >> $LOG_FILE
-      report_status $?
-    else
-      echo "Instance in '$INSTANCE' already started." | write_log STDOUT
-    fi
-  done
-}
+	start()
+	{
+	  for INSTANCE in ${DATADIRS[@]}
+	  do
+		pg_ctl -D $INSTANCE status >> $LOG_FILE
+		if [[ $? -ne '0' ]]
+		then
+		  echo -e "Starting instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
+		  echo 'pg_ctl start -D '$INSTANCE | write_log
+		  pg_ctl start -D $INSTANCE &>> $LOG_FILE
+		  sync
+		  echo "pg_ctl status -D $INSTANCE" | write_log
+		  pg_ctl status -D $INSTANCE >> $LOG_FILE
+		  report_status $?
+		else
+		  echo "Instance in '$INSTANCE' already started." | write_log STDOUT
+		fi
+	  done
+	}
 
-stop()
-{
-  for INSTANCE in ${DATADIRS[@]}
-  do
-    pg_ctl -D $INSTANCE status >> $LOG_FILE
-    if [[ $? -eq 0 ]]
-    then
-      echo -e "Stopping instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
-      echo 'pg_ctl stop -D '$INSTANCE' -m '$MODE | write_log
-      pg_ctl stop -D $INSTANCE -m $MODE &>> $LOG_FILE
-      report_status $?
-    else
-      echo "Instance in '$INSTANCE' already stopped." | write_log STDOUT
-    fi
-  done
-}
+	stop()
+	{
+	  for INSTANCE in ${DATADIRS[@]}
+	  do
+		pg_ctl -D $INSTANCE status >> $LOG_FILE
+		if [[ $? -eq 0 ]]
+		then
+		  echo -e "Stopping instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
+		  echo 'pg_ctl stop -D '$INSTANCE' -m '$MODE | write_log
+		  pg_ctl stop -D $INSTANCE -m $MODE &>> $LOG_FILE
+		  report_status $?
+		else
+		  echo "Instance in '$INSTANCE' already stopped." | write_log STDOUT
+		fi
+	  done
+	}
 
-restart()
-{
-  for INSTANCE in ${DATADIRS[@]}
-  do
-      echo -e "Restarting instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
-      echo 'pg_ctl restart -D '$INSTANCE | write_log
-      pg_ctl restart -D $INSTANCE &>> $LOG_FILE
-      sync
-      echo "pg_ctl status -D $INSTANCE" | write_log
-      pg_ctl status -D $INSTANCE >> $LOG_FILE
-      report_status $?
-  done
-}
+	restart()
+	{
+	  for INSTANCE in ${DATADIRS[@]}
+	  do
+		  echo -e "Restarting instance in '$INSTANCE'..." | write_log STDOUT NONEWLINE
+		  echo 'pg_ctl restart -D '$INSTANCE | write_log
+		  pg_ctl restart -D $INSTANCE &>> $LOG_FILE
+		  sync
+		  echo "pg_ctl status -D $INSTANCE" | write_log
+		  pg_ctl status -D $INSTANCE >> $LOG_FILE
+		  report_status $?
+	  done
+	}
 
-max_array_element_length()
-{
-  local INPUT_ARRAY=($1)
-  local MAX_ELEMENT_LENGTH=0
+	max_array_element_length()
+	{
+	  local INPUT_ARRAY=($1)
+	  local MAX_ELEMENT_LENGTH=0
 
-  for ELEMENT in ${INPUT_ARRAY[@]}
-  do
-    if [[ $MAX_ELEMENT_LENGTH -lt ${#ELEMENT} ]]
-    then
-      MAX_ELEMENT_LENGTH=${#ELEMENT}
-    fi
-  done
+	  for ELEMENT in ${INPUT_ARRAY[@]}
+	  do
+		if [[ $MAX_ELEMENT_LENGTH -lt ${#ELEMENT} ]]
+		then
+		  MAX_ELEMENT_LENGTH=${#ELEMENT}
+		fi
+	  done
 
-  echo $MAX_ELEMENT_LENGTH
-}
+	  echo $MAX_ELEMENT_LENGTH
+	}
 
-IFS="|"
-INSTANCE_NAME_LENGTH=$(max_array_element_length "${DATADIRS[*]}")
-INSTANCE_PORT_LENGTH=$(max_array_element_length "${PORTS[*]}")
+	IFS="|"
+	INSTANCE_NAME_LENGTH=$(max_array_element_length "${DATADIRS[*]}")
+	INSTANCE_PORT_LENGTH=$(max_array_element_length "${PORTS[*]}")
 
-case $ACTION in
-  destroy)
-    destroy
-    ;;
-  start)
-    start
-    ;;
-  stop)
-    stop
-    ;;
-  restart)
-    restart
-    ;;
-  status)
-    status
-    ;;
-  *)
-    echo 'Error: Invalid action '$ACTION' specified.'
-    usage
-    exit 1
-esac
+	case $ACTION in
+	  destroy)
+		destroy
+		;;
+	  start)
+		start
+		;;
+	  stop)
+		stop
+		;;
+	  restart)
+		restart
+		;;
+	  status)
+		status
+		;;
+	  *)
+		echo 'Error: Invalid action '$ACTION' specified.'
+		usage
+		exit 1
+	esac
 TOOL_FILE
 )
 
-IFS=" "
+local IFS=""
 while [[ $(ls -A "tool"${SUBSET:+'_'$SUBSET}".pg_rep_test" 2> /dev/null) ]]
 do
   ((SUBSET++))
