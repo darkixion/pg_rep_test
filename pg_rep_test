@@ -1448,6 +1448,11 @@ do
 
   echo -e "port = ${PORT_LIST[$CURRENT_STANDBY]}\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
 
+  if [ $(version $PG_VERSION) -ge $(version "9.5.0") ]
+  then
+    echo -e "cluster_name = '${DIR_LIST[$CURRENT_STANDBY]}'\n" 2>> $LOG_FILE 1>> $DIR/custom.conf
+  fi
+
   # Only set up streaming replication configuration for instances that will
   # use it.
   if [[ $MAX_WAL_SENDERS > 0 ]]
@@ -1516,7 +1521,8 @@ do
       echo "Error: Failed to connect to primary."
       exit 1
     fi
-  else
+  elif $REPLICATION_SLOTS
+  then
     echo "psql -p ${PORT_LIST[$CURRENT_STANDBY]} -h localhost -c 'SET SESSION synchronous_commit TO 'off';$CREATE_REPLICATION_SLOTS_COMMAND;' -d postgres" | write_log
     psql -p ${PORT_LIST[$CURRENT_STANDBY]} -h localhost -c "SET SESSION synchronous_commit TO 'off';$CREATE_REPLICATION_SLOTS_COMMAND" -d postgres &>> $LOG_FILE
 
