@@ -404,6 +404,7 @@ request_params()
 build_ascii_report()
 {
   local CURRENT_LEVEL=$1
+  local IFS=""
 
   # Indent everything according to replication structure.
   if [[ $CURRENT_LEVEL -eq 1 ]]
@@ -434,10 +435,10 @@ build_ascii_report()
     SPACER=""
     for (( I=1; I <= $INDENT; I++ ))
     do
-      SPACER=$SPACER"    "
+      SPACER=$SPACER'    '
       if [[ $I -gt 1 ]]
       then
-        SPACER=$SPACER"    "
+        SPACER=$SPACER'    '
       fi
     done
     ASCII_REPORT=$ASCII_REPORT$SPACER"|\n"
@@ -1535,7 +1536,9 @@ do
 done
 
 # Output the final ASCII representation of the replication structure.
+IFS=""
 echo -e $ASCII_REPORT
+IFS=" "
 
 if [[ -z $TOOL ]]
 then
