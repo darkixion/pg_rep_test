@@ -30,7 +30,7 @@ read pg_version <<<$(postgres -V | grep -Po '\d+?\.\d+?(\.\d+)?')
 
 function usage()
 {
-cat <<optionSDOC
+cat <<optiondoc
 Usage:
   $(basename $0) [option]
 
@@ -58,7 +58,7 @@ $(( $default_starting_port + 2 )),...)
   -T                     don't generate management tool script file to manage
                          the new instances
   -?                     show this help then exit
-optionSDOC
+optionsdoc
 }
 
 IFS=","
@@ -794,7 +794,7 @@ TOOL_CONFIG
 file_body=$(cat <<-'TOOL_FILE'
 	function usage()
 	{
-	cat << optionSDOC
+	cat << optionsdoc
 
 	Usage:
 	  $0 [option] [action]
@@ -814,7 +814,7 @@ file_body=$(cat <<-'TOOL_FILE'
 	  restart                restart all instances
 	  destroy                stops (if started) and deletes all instances; also
 	                         deletes this maintenance script
-	optionSDOC
+	optionsdoc
 	}
 
 	# Configure colour variables if outputting to the terminal
@@ -1581,8 +1581,8 @@ do
   # standbys at this point.
   if [[ $instance -eq 1 ]]
   then
-    echo "psql -p ${port_list[0]} -h localhost -c 'SET SESSION synchronous_commit TO 'off';CREATE USER rep_user replicaTION;$create_replication_slots_command;' -d postgres" | write_log
-    psql -p ${port_list[0]} -h localhost -c "SET SESSION synchronous_commit TO 'off';CREATE USER rep_user replicaTION;$create_replication_slots_command" -d postgres &>> $log_file
+    echo "psql -p ${port_list[0]} -h localhost -c 'SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;$create_replication_slots_command;' -d postgres" | write_log
+    psql -p ${port_list[0]} -h localhost -c "SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;$create_replication_slots_command" -d postgres &>> $log_file
 
     if [[ $? -ne 0 ]]
     then
