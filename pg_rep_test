@@ -30,9 +30,9 @@ read pg_version <<<$(postgres -V | grep -Po '\d+?\.\d+?(\.\d+)?')
 
 function usage()
 {
-cat <<optiondoc
+cat <<OPTIONSDOC
 Usage:
-  $(basename $0) [option]
+  $(basename $0) [OPTION]
 
 Options:
   -a ARCHIVEDIR          create an archive in the named directory
@@ -58,10 +58,9 @@ $(( $default_starting_port + 2 )),...)
   -T                     don't generate management tool script file to manage
                          the new instances
   -?                     show this help then exit
-optionsdoc
+OPTIONSDOC
 }
 
-IFS=","
 while getopts “a:D:il:Lp:r:Rs:ST?” option
 do
   case $option in
@@ -142,6 +141,8 @@ function generate_ports()
 {
   local start_time=$(date +%s)
   local delay_warning=false
+  local IFS=","
+
   auto_port_list=()
 
   for (( port=$default_starting_port, port_count=0; port_count <= $replicas; port++ ))
@@ -688,7 +689,12 @@ function check_port_count()
   if [[ -n $replicas ]] && [[ -n $input_port_list ]] && [[ ${#input_port_list[*]} -ne $(( $replicas + 1 )) ]]
   then
     echo -e "$error_text: The number of ports provided does not match the number of replicas + primary."
-    if $fatal;then exit 1;else return 1;fi
+    if $fatal
+    then
+      exit 1
+    else
+      return 1
+    fi
   fi
 }
 
@@ -704,7 +710,12 @@ function check_ports_numeric()
     if [[ -n $port ]] && ! [[ $port =~ ^[0-9]+$ ]]
     then
       echo -e "$error_text:  Invalid port '$port'. Port values must be numeric."
-      if $fatal;then exit 1;else return 1;fi
+      if $fatal
+      then
+        exit 1
+      else
+        return 1
+      fi
     fi
   done
 }
@@ -732,7 +743,12 @@ function check_directory_count()
   if [[ -n $replicas ]] && [[ -n $input_dir_list ]] && [[ ${#input_dir_list[@]} -ne $(( $replicas + 1 )) ]]
   then
     echo -e "$error_text: The number of directories provided does not match a primary + the number of replicas."
-    if $fatal;then exit 1;else return 1;fi
+    if $fatal
+    then
+      exit 1
+    else
+      return 1
+    fi
   fi
 }
 
@@ -744,8 +760,13 @@ function check_directory_usage()
     # Check for duplicate directory names in supplied list
     if [[ $(echo ${dir_list[*]} | grep -ow $dir | wc -l) -gt 1 ]]
     then
-       echo -e "$error_text: The directory '$dir' is specified more than once in the provided list."
-       if $fatal;then exit 1;else return 1;fi
+      echo -e "$error_text: The directory '$dir' is specified more than once in the provided list."
+      if $fatal
+      then
+        exit 1
+      else
+        return 1
+      fi
     fi
 
     if [[ -d $dir ]]
@@ -753,7 +774,12 @@ function check_directory_usage()
       if [[ $(ls -A $dir) ]]
       then
         echo -e "$error_text: The directory '$dir' already exists and is not empty."
-        if $fatal;then exit 1;else return 1;fi
+        if $fatal
+        then
+          exit 1
+        else
+          return 1
+        fi
       fi
     fi
   done
@@ -769,7 +795,12 @@ function check_archive_dir_usage()
     if [[ $(ls -A $input_archive_dir) ]]
     then
       echo -e "$error_text: The archive directory '$input_archive_dir' already exists and is not empty."
-      if $fatal;then exit 1;else return 1;fi
+      if $fatal
+      then
+        exit 1
+      else
+        return 1
+      fi
     fi
   fi
 }
@@ -794,10 +825,10 @@ TOOL_CONFIG
 file_body=$(cat <<-'TOOL_FILE'
 	function usage()
 	{
-	cat << optionsdoc
+	cat << OPTIONSDOC
 
 	Usage:
-	  $0 [option] [action]
+	  $0 [OPTION] [ACTION]
 
 	Options:
 	  -m MODE                shutdown mode (smart, fast or immediate); must be
@@ -814,7 +845,7 @@ file_body=$(cat <<-'TOOL_FILE'
 	  restart                restart all instances
 	  destroy                stops (if started) and deletes all instances; also
 	                         deletes this maintenance script
-	optionsdoc
+	OPTIONSDOC
 	}
 
 	# Configure colour variables if outputting to the terminal
@@ -1201,29 +1232,30 @@ file_body=$(cat <<-'TOOL_FILE'
 TOOL_FILE
 )
 
-local IFS=""
-while [[ $(ls -A "tool"${subset:+'_'$subset}".pg_rep_test" 2> /dev/null) ]]
-do
-  ((subset++))
-done
-tool_filename="tool"${subset:+'_'$subset}".pg_rep_test"
-unset subset
+  local IFS=""
+  while [[ $(ls -A "tool"${subset:+'_'$subset}".pg_rep_test" 2> /dev/null) ]]
+  do
+    ((subset++))
+  done
+  tool_filename="tool"${subset:+'_'$subset}".pg_rep_test"
+  unset subset
 
-echo $file_header > $tool_filename
-echo $file_body >> $tool_filename
-chmod u+x $tool_filename
+  echo $file_header > $tool_filename
+  echo $file_body >> $tool_filename
+  chmod u+x $tool_filename
 
-echo -e "\nThe maintenance tool script for these instances is '$tool_filename'." | write_log STDOUT
-echo -e "Run $yellow./$tool_filename -?$plain for help with using it.\n"
+  echo -e "\nThe maintenance tool script for these instances is '$tool_filename'." | write_log STDOUT
+  echo -e "Run $yellow./$tool_filename -?$plain for help with using it.\n"
 }
 
 ########## CREATE TOOL CODE END  ##########
 
 
 
-
+IFS=","
 port_list=($ports)
 dir_list=($datadirs)
+IFS=" "
 
 check_version_support
 
@@ -1275,7 +1307,6 @@ else
 fi
 
 check_archive_dir_usage $archive_dir true
-
 
 # Set default values where necessary
 dir_list=(${dir_list[*]:-${auto_dir_list[@]}})
