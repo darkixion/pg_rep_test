@@ -26,13 +26,13 @@ fi
 
 
 # Get the version details of the current PostgreSQL installation
-read pg_version <<<$(postgres -V | grep -Po '\d+?\.\d+?(\.\d+)?')
+read -r pg_version <<<"$(postgres -V | grep -Po '\d+?\.\d+?(\.\d+)?')"
 
 function usage()
 {
 cat <<OPTIONSDOC
 Usage:
-  $(basename $0) [OPTION]
+  $(basename "$0") [OPTION]
 
 Options:
   -a ARCHIVEDIR          create an archive in the named directory
@@ -45,8 +45,8 @@ Options:
   -p PORTS               comma-separated list of ports to use starting with
                          primary (default: \
 $default_starting_port,\
-$(( $default_starting_port + 1 )),\
-$(( $default_starting_port + 2 )),...)
+$(( default_starting_port + 1 )),\
+$(( default_starting_port + 2 )),...)
   -r REPLICAS            number of replicas to create (default: 1)
   -R                     use replication slots
   -s fan|tree|chain      replication structure (default: fan)
@@ -61,7 +61,7 @@ $(( $default_starting_port + 2 )),...)
 OPTIONSDOC
 }
 
-while getopts “a:D:il:Lp:r:Rs:ST?” option
+while getopts "a:D:il:Lp:r:Rs:ST?" option
 do
   case $option in
     a)
@@ -104,7 +104,7 @@ do
   esac
 done
 
-printf "Detected version of PostgreSQL: %s\n\n" $pg_version
+printf "Detected version of PostgreSQL: %s\n\n" "$pg_version"
 
 # Configure colour variables if outputting to the terminal.
 if [ -t 1 ]
@@ -139,15 +139,16 @@ function version()
 # Generate a list of unused ports to run instances on.
 function generate_ports()
 {
-  local start_time=$(date +%s)
+  local start_time
+  start_time=$(date +%s)
   local delay_warning=false
   local IFS=","
 
   auto_port_list=()
 
-  for (( port=$default_starting_port, port_count=0; port_count <= $replicas; port++ ))
+  for (( port=default_starting_port, port_count=0; port_count <= replicas; port++ ))
   do
-    if [[ $(( $(date +%s) - $start_time )) -gt 4 ]] && [ "$delay_warning" == false ]
+    if [[ $(( $(date +%s) - start_time )) -gt 4 ]] && [ "$delay_warning" == false ]
     then
       echo "Notice: Currently determining available ports.  This is taking"\
            "longer than usual possibly due to many other instances already"\
@@ -158,10 +159,10 @@ function generate_ports()
     # Check if the port is currently being used.
     if lsof -i:$port > /dev/null
     then
-      continue; # port in use, so try next one
+      continue # port in use, so try next one
     else
       auto_port_list=(${auto_port_list[@]} $port)
-      port_count=$[port_count + 1];
+      port_count=$((port_count + 1))
     fi
   done
 }
@@ -179,7 +180,7 @@ function generate_dirs()
   unset subset
 
   # Generate a standby directory for each replica.
-  for (( replica=1; replica <= $replicas; replica++ ))
+  for (( replica=1; replica <= replicas; replica++ ))
   do
     # If the standby directory already exists, suffix a number and try again.
     while [[ $(ls -A "standby$replica"${subset:+'_'$subset} 2> /dev/null) ]]
@@ -198,18 +199,18 @@ function settings_summary()
   # Note that a 3rd value passed to output_report here has a coalescing effect
   # where if the 2nd one is empty, the 3rd is accepted as the 2nd parameter.
   echo "==== SETTINGS SUMMARY ===="
-  output_report "Replicas" $replicas
+  output_report "Replicas" "$replicas"
   output_report "Ports" "${port_list[*]}"
   output_report "Directories" "${dir_list[*]}"
-  output_report "Archive dir" $archive_dir "[None]"
-  output_report "Replication structure" $replication_structure
-  output_report "Synchronous" $synchronous
-  if [ $(version $pg_version) -ge $(version "9.4.0") ]
+  output_report "Archive dir" "$archive_dir" "[None]"
+  output_report "Replication structure" "$replication_structure"
+  output_report "Synchronous" "$synchronous"
+  if [ "$(version "$pg_version")" -ge "$(version "9.4.0")" ]
   then
-    output_report "Replication slots" $replication_slots
+    output_report "Replication slots" "$replication_slots"
   fi
   output_report "Database logging" $enable_logs
-  output_report "Log file" $log_file
+  output_report "Log file" "$log_file"
   echo -e "==========================\n"
 
   # If no parameters were provided, these are considered the defaults, so
@@ -241,9 +242,9 @@ function request_params()
     local input_replicas=0
 
     echo # newline
-    read -p "How many replicas do you want in addition to the primary? [default:${replicas:-$default_replicas}] " input_replicas
+    read -rp "How many replicas do you want in addition to the primary? [default:${replicas:-$default_replicas}] " input_replicas
 
-    check_replica_count_numeric $input_replicas
+    check_replica_count_numeric "$input_replicas"
 
     if [[ $? -eq 0 ]]
     then
@@ -271,10 +272,9 @@ function request_params()
   while true
   do
     local input_ports=()
-    local IFS=","
 
     echo # newline
-    read -p "Input comma-separated list of ports: [default:${port_list[*]}] " input_ports
+    read -rp "Input comma-separated list of ports: [default:${port_list[*]}] " input_ports
 
     input_ports=(${input_ports[*]:-${port_list[@]}})
 
@@ -298,10 +298,9 @@ function request_params()
   while true
   do
     local input_dirs=()
-    local IFS=","
 
     echo # newline
-    read -p "Input comma-separated list of directories: [default:${dir_list[*]}] " input_dirs
+    read -rp "Input comma-separated list of directories: [default:${dir_list[*]}] " input_dirs
 
     input_dirs=(${input_dirs[*]:-${dir_list[@]}})
 
@@ -327,9 +326,9 @@ function request_params()
     local input_archive_dir=''
 
     echo # newline
-    read -p "Input archive directory (leave blank to disable archiving): [default:${input_archive_dir:-${archive_dir:-(disabled)}}] " input_archive_dir
+    read -rp "Input archive directory (leave blank to disable archiving): [default:${input_archive_dir:-${archive_dir:-(disabled)}}] " input_archive_dir
 
-    check_archive_dir_usage $input_archive_dir
+    check_archive_dir_usage "$input_archive_dir"
 
     if [[ $? -eq 0 ]]
     then
@@ -379,7 +378,7 @@ function request_params()
 
   # Use replication slots
 
-  if [ $(version $pg_version) -ge $(version "9.4.0") ]
+  if [ "$(version "$pg_version")" -ge "$(version "9.4.0")" ]
   then
 
     if $replication_slots
@@ -434,7 +433,7 @@ function request_params()
     local input_log_file=''
 
     echo # newline
-    read -p "Input script log file name (leave blank to pipe to /dev/null): [default:${input_log_file:-/dev/null}] " input_log_file
+    read -rp "Input script log file name (leave blank to pipe to /dev/null): [default:${input_log_file:-/dev/null}] " input_log_file
 
     log_file=${input_log_file:-/dev/null}
 
@@ -465,7 +464,7 @@ function build_ascii_report()
         fi
         ;;
       chain)
-        indent=$(( $current_standby % 10 ))
+        indent=$(( current_standby % 10 ))
         if [[ $indent -eq 0 ]]
         then
           ascii_report=$ascii_report"----------------------------------------------------------------------------/\n"
@@ -474,7 +473,7 @@ function build_ascii_report()
     esac
 
     spacer=""
-    for (( I=1; I <= $indent; I++ ))
+    for (( I=1; I <= indent; I++ ))
     do
       spacer=$spacer'    '
       if [[ $I -gt 1 ]]
@@ -506,10 +505,10 @@ function write_log()
   do
     if [[ "$output" == STDOUT ]]
     then
-        echo $option $line
+        echo $option "$line"
     fi
 
-    echo "$(date +\%Y-\%m-\%d\ \%H:\%M:\%S) $line" >> $log_file
+    echo "$(date +'%Y-%m-%d %H:%M:%S') $line" >> "$log_file"
   done
 }
 
@@ -522,7 +521,7 @@ function output_report()
   local value=$2
 
   echo -ne "$blue  $title: $plain"
-  echo $value
+  echo "$value"
 }
 
 # Based on the status provided, reports SUCCESS or FAILED
@@ -533,15 +532,15 @@ function report_status()
 
   if [[ $status -eq 0 ]] && [[ -n $status ]]
   then
-    echo -ne $green # green
+    echo -ne "$green" # green
     echo -e " SUCCESS!" | write_log STDOUT nonewline
   else
-    echo -ne $red # red
+    echo -ne "$red" # red
     echo -e " FAILED!" | write_log STDOUT nonewline
   fi
-  echo $plain # reset colours
+  echo "$plain" # reset colours
 
-  return $status
+  return "$status"
 }
 
 function start_instance()
@@ -559,12 +558,12 @@ function start_instance()
     then
       echo "Starting primary..." | write_log STDOUT nonewline
       echo "pg_ctl -w -D $dir start" | write_log
-      pg_ctl -w -D $dir -s start >> $log_file
+      pg_ctl -w -D "$dir" -s start >> "$log_file"
       sleep 1
     else
       echo -e "Starting standby $current_standby..." | write_log STDOUT nonewline
       echo "pg_ctl -w -D $dir start" | write_log
-      pg_ctl -w -D $dir -s start >> $log_file
+      pg_ctl -w -D "$dir" -s start >> "$log_file"
     fi
   fi
 
@@ -574,7 +573,7 @@ function start_instance()
 
   # Test that the primary or standby has started successfully.
   echo "pg_ctl -D $dir status" | write_log
-  pg_ctl -D $dir status &>> $log_file
+  pg_ctl -D "$dir" status &>> "$log_file"
 
   status=$?
   echo "status is $status" | write_log
@@ -593,7 +592,7 @@ function start_instance()
         sleep 0.5
 
         echo "pg_ctl -D $dir status" | write_log
-        pg_ctl -D $dir status &>> $log_file
+        pg_ctl -D "$dir" status &>> "$log_file"
         status=$?
         echo "status is $status" | write_log
         report_status $status
@@ -604,7 +603,7 @@ function start_instance()
         fi
 
         echo "Error: Instance doesn't appear to be available '$instance_dir'.  Retrying..." | write_log STDOUT 
-        start_instance $instance_dir $instance_number $(( $retry_count - 1 ))
+        start_instance "$instance_dir" "$instance_number" $(( retry_count - 1 ))
         ;;
       esac
   elif [[ $status -ne 0 ]]
@@ -620,7 +619,7 @@ function start_instance()
 function check_version_support()
 {
   # Check that we're using a supported version
-  if [ $(version $pg_version) -lt $(version "9.1.0") ]
+  if [ "$(version "$pg_version")" -lt "$(version "9.1.0")" ]
   then
     echo -e "$error_text: Only PostgreSQL 9.1 and above is supported.  You are using"\
          "PostgreSQL $pg_version."
@@ -631,7 +630,7 @@ function check_version_support()
 function check_replication_slot_support()
 {
   # If replication slots have been requested, ensure we're using 9.4 or above
-  if [ $(version $pg_version) -lt $(version "9.4.0") ] && [ "$replication_slots" == true ]
+  if [ "$(version "$pg_version")" -lt "$(version "9.4.0")" ] && [ "$replication_slots" == true ]
   then
     echo -e "$error_text: Replication slots (-R) are only supported in PostgreSQL 9.4"\
          "and above.  You are using PostgreSQL $pg_version."
@@ -670,7 +669,7 @@ function check_cascading_replication_support()
 {
   # Throw an error if any attempt to use a cascading replication feature prior to
   # PostgreSQL 9.2.
-  if ( [ $(version $pg_version) -lt $(version "9.2.0") ] ) && [[ $replication_structure != 'fan' ]]
+  if ( [ "$(version "$pg_version")" -lt "$(version "9.2.0")" ] ) && [[ $replication_structure != 'fan' ]]
   then
     echo -e "$error_text:  The replication structure '$replication_structure' is not supported prior to"\
          "PostgreSQL 9.2 as it requires cascading replication."
@@ -686,7 +685,7 @@ function check_port_count()
   # Ensure that the number of ports equals the number of replicas plus the
   # primary.
 
-  if [[ -n $replicas ]] && [[ -n $input_port_list ]] && [[ ${#input_port_list[*]} -ne $(( $replicas + 1 )) ]]
+  if [[ -n $replicas ]] && [[ ${#input_port_list[@]} -ne 0 ]] && [[ ${#input_port_list[*]} -ne $(( replicas + 1 )) ]]
   then
     echo -e "$error_text: The number of ports provided does not match the number of replicas + primary."
     if $fatal
@@ -704,7 +703,7 @@ function check_ports_numeric()
   local input_ports=($1)
   local fatal=${2:-false}
 
-  for port in ${input_ports[@]}
+  for port in "${input_ports[@]}"
   do
     # Check that the port value is numeric if provided.
     if [[ -n $port ]] && ! [[ $port =~ ^[0-9]+$ ]]
@@ -723,9 +722,9 @@ function check_ports_numeric()
 function check_port_usage()
 {
   # Check that the ports listed aren't already in use.
-  for port in ${port_list[@]}
+  for port in "${port_list[@]}"
   do
-    if lsof -i:$port > /dev/null
+    if lsof -i:"$port" > /dev/null
     then
       echo -e "$error_text:  Port $port already in use.  Specify a list of unused ports with the -p option, or omit this parameter to auto-select ports."
       exit 1
@@ -740,7 +739,7 @@ function check_directory_count()
 
   # Check that the number of directories is equal to the number of standbys plus
   # the primary.
-  if [[ -n $replicas ]] && [[ -n $input_dir_list ]] && [[ ${#input_dir_list[@]} -ne $(( $replicas + 1 )) ]]
+  if [[ -n $replicas ]] && [[ "${#input_dir_list[@]}" -ne 0 ]] && [[ ${#input_dir_list[@]} -ne $(( replicas + 1 )) ]]
   then
     echo -e "$error_text: The number of directories provided does not match a primary + the number of replicas."
     if $fatal
@@ -755,10 +754,10 @@ function check_directory_count()
 function check_directory_usage()
 {
   # Check each directory to see if it's empty if it already exists.
-  for dir in ${dir_list[@]}
+  for dir in "${dir_list[@]}"
   do
     # Check for duplicate directory names in supplied list
-    if [[ $(echo ${dir_list[*]} | grep -ow $dir | wc -l) -gt 1 ]]
+    if [[ $(echo "${dir_list[*]}" | grep -owc "$dir") -gt 1 ]]
     then
       echo -e "$error_text: The directory '$dir' is specified more than once in the provided list."
       if $fatal
@@ -771,7 +770,7 @@ function check_directory_usage()
 
     if [[ -d $dir ]]
     then
-      if [[ $(ls -A $dir) ]]
+      if [[ $(ls -A "$dir") ]]
       then
         echo -e "$error_text: The directory '$dir' already exists and is not empty."
         if $fatal
@@ -792,7 +791,7 @@ function check_archive_dir_usage()
 
   if [[ -d $input_archive_dir ]]
   then
-    if [[ $(ls -A $input_archive_dir) ]]
+    if [[ $(ls -A "$input_archive_dir") ]]
     then
       echo -e "$error_text: The archive directory '$input_archive_dir' already exists and is not empty."
       if $fatal
@@ -1205,8 +1204,8 @@ file_body=$(cat <<-'TOOL_FILE'
 	}
 
 	IFS="|"
-	instance_name_length=$(max_array_element_length "${datadirs[*]}")
-	instance_port_length=$(max_array_element_length "${ports[*]}")
+	instance_name_length=$(max_array_element_length "${datadirs[*]}|Instance")
+	instance_port_length=$(max_array_element_length "${ports[*]}|Ports")
 
 	case $action in
 	  destroy)
@@ -1233,15 +1232,15 @@ TOOL_FILE
 )
 
   local IFS=""
-  while [[ $(ls -A "tool"${subset:+'_'$subset}".pg_rep_test" 2> /dev/null) ]]
+  while [[ $(ls -A "tool${subset:+'_'$subset}.pg_rep_test" 2> /dev/null) ]]
   do
     ((subset++))
   done
-  tool_filename="tool"${subset:+'_'$subset}".pg_rep_test"
+  tool_filename="tool${subset:+'_'$subset}.pg_rep_test"
   unset subset
 
-  echo $file_header > $tool_filename
-  echo $file_body >> $tool_filename
+  echo "$file_header" > $tool_filename
+  echo "$file_body" >> $tool_filename
   chmod u+x $tool_filename
 
   echo -e "\nThe maintenance tool script for these instances is '$tool_filename'." | write_log STDOUT
@@ -1262,7 +1261,7 @@ check_version_support
 # From PostgreSQL 9.3, initdb accepts the -N parameter which tells it not to
 # wait for files to be written to disk. We can do this as we're creating
 # disposable databases anyway.
-if [ $(version $pg_version) -ge $(version "9.3.0") ]
+if [ "$(version "$pg_version")" -ge "$(version "9.3.0")" ]
 then
   initdb_nosync='-N'
   initdb_checksums='-k'
@@ -1306,7 +1305,7 @@ else
   check_directory_usage "${dir_list[*]}" true
 fi
 
-check_archive_dir_usage $archive_dir true
+check_archive_dir_usage "$archive_dir" true
 
 # Set default values where necessary
 dir_list=(${dir_list[*]:-${auto_dir_list[@]}})
@@ -1326,11 +1325,11 @@ echo "Command issued: $0 $*" > $log_file
 
 settings_summary
 
-instances=$(( $replicas + 1 ))
+instances=$(( replicas + 1 ))
 
 # Create directories.
-echo "mkdir -p -m 0700 ${dir_list[@]}" | write_log
-mkdir -p -m 0700 ${dir_list[@]} &>> /dev/null
+echo "mkdir -p -m 0700 ${dir_list[*]}" | write_log
+mkdir -p -m 0700 "${dir_list[@]}" &>> /dev/null
 
 if [[ $? -ne 0 ]]
 then
@@ -1340,12 +1339,12 @@ fi
 
 # If the directory already existed, the permissions may not be correct
 # so apply what's necessary for a database cluster.
-chmod 0700 ${dir_list[@]} &>> /dev/null
+chmod 0700 "${dir_list[@]}" &>> /dev/null
 
 # Create archive directory
 if [[ -n $archive_dir ]]
 then
-  mkdir -p -m 0700 $archive_dir
+  mkdir -p -m 0700 "$archive_dir"
 
   # Check that the archive directory can be written to.  We can get away with
   # trying to create it first because if the directory already existed but
@@ -1361,9 +1360,9 @@ fi
 
 trap catch_broken_instances 0
 
-for (( instance=1; instance <= $instances; instance++ ))
+for (( instance=1; instance <= instances; instance++ ))
 do
-  current_standby=$(( $instance - 1 ))
+  current_standby=$(( instance - 1 ))
   max_wal_senders=0
   dir=${dir_list[$current_standby]}
 
@@ -1372,7 +1371,7 @@ do
   then
     echo -e "Creating primary in '$dir'..." | write_log STDOUT nonewline
     echo "initdb $initdb_nosync $initdb_checksums -D $dir -E 'UTF8'" | write_log
-    initdb $initdb_nosync $initdb_checksums -D $dir -E 'UTF8' &>> $log_file
+    initdb $initdb_nosync $initdb_checksums -D "$dir" -E 'UTF8' &>> $log_file
     report_status $?
 
     if [[ $? -ne 0 ]]
@@ -1383,46 +1382,49 @@ do
 
     # Add an include to pull in the custom configuration contained in
     # custom.conf.
-    echo "include 'custom.conf'" 2>> $log_file 1>> $dir/postgresql.conf
-    echo -e "# This file contains custom configuration changes made by pg_rep_test\n" 2>> $log_file 1>>$dir/custom.conf
+    echo "include 'custom.conf'" 2>> $log_file 1>> "$dir/postgresql.conf"
 
-    # Reduce the resource requirements to enable a large number of standbys.
-    echo -e "shared_buffers = 8MB       # This is set low to allow a large number of standbys to be set up\n" 2>> $log_file 1>> $dir/custom.conf
+    {
+      echo -e "# This file contains custom configuration changes made by pg_rep_test\n"
 
-    if $enable_logs
-    then
-      echo -e "logging_collector = on\n" 2>> $log_file 1>> $dir/custom.conf
-      echo -e "log_line_prefix = '%m - %u - %d'" 2>> $log_file 1>>$dir/custom.conf
-    fi
+      # Reduce the resource requirements to enable a large number of standbys.
+      echo -e "shared_buffers = 8MB       # This is set low to allow a large number of standbys to be set up\n"
 
-    # Define list of standbys.  We want to set this up in the primary prior to
-    # base backup so that any promoted standby can use the same list.
-    if $synchronous
-    then
-      sync_standby_list='standby1'
-      for (( sync_standby=2; sync_standby <= $replicas; sync_standby++ ))
-      do
-        sync_standby_list=$sync_standby_list",standby$sync_standby"
-      done
-        echo -e "synchronous_standby_names = '$sync_standby_list'\n" 2>> $log_file 1>> $dir/custom.conf
-    fi
+      if $enable_logs
+      then
+        echo -e "logging_collector = on\n"
+        echo -e "log_line_prefix = '%m - %u - %d'"
+      fi
 
-    if [[ -n $archive_dir ]]
-    then
-      echo -e "archive_mode = on\n" 2>> $log_file 1>> $dir/custom.conf
-      echo -e "$(echo archive_command = \'cp \"%p\" \"$(readlink -f $archive_dir)/%f\"\')\n" 2>> $log_file 1>> $dir/custom.conf
-    fi
+      # Define list of standbys.  We want to set this up in the primary prior to
+      # base backup so that any promoted standby can use the same list.
+      if $synchronous
+      then
+        sync_standby_list='standby1'
+        for (( sync_standby=2; sync_standby <= replicas; sync_standby++ ))
+        do
+          sync_standby_list=$sync_standby_list",standby${sync_standby}"
+        done
+          echo -e "synchronous_standby_names = '${sync_standby_list}'\n"
+      fi
+
+      if [[ -n $archive_dir ]]
+      then
+        echo -e "archive_mode = on\n"
+        echo -e "archive_command = 'cp \"%p\" \"$(readlink -f "${archive_dir}")/%f\"'\n"
+      fi
+    } 2>> $log_file 1>> "$dir/custom.conf"
 
     # Create a copy of the custom config before we modify it further
     # because the remaining settings should only apply to the primary.
     # Every standby will use this copy.
     echo "cp $dir/custom.conf{,.template}" | write_log
-    cp $dir/custom.conf{,.template} 2>> $log_file
+    cp "$dir/custom.conf"{,.template} 2>> $log_file
   elif [[ $current_standby -eq 1 ]]
   then
-    echo -e "Creating standby $current_standby from primary in '$dir'..." | write_log STDOUT nonewline
+    echo -e "Creating standby $current_standby from primary in '${dir}'..." | write_log STDOUT nonewline
     echo "pg_basebackup -x -D $dir -h localhost -p ${port_list[0]} -U rep_user" | write_log
-    pg_basebackup -x -D $dir -h localhost -p ${port_list[0]} -U rep_user &>> $log_file
+    pg_basebackup -x -D "$dir" -h localhost -p "${port_list[0]}" -U rep_user &>> $log_file
 
     report_status $?
 
@@ -1433,16 +1435,16 @@ do
 
     # Restore the copy of the config for the standby as we want a
     # copy without any primary-specific modifications.
-    mv $dir/custom.conf{.template,}
+    mv "$dir"/custom.conf{.template,}
     if [[ -n $archive_dir ]]
     then
-      echo -e "$(echo restore_command = \'cp \"$(readlink -f $archive_dir)/%f\" \"%p\"\')" 2>> $log_file 1>> $dir/recovery.conf
+      echo -e "restore_command = 'cp \"$(readlink -f "$archive_dir")/%f\" \"%p\"'" 2>> $log_file 1>> "$dir/recovery.conf"
     fi
 
     # Now that we've got one base backup, we can just copy it for every remaining standby.
     if [[ $replicas -gt 1 ]]
     then
-      for (( standby=2; standby<=$replicas; standby++ ))
+      for (( standby=2; standby<=replicas; standby++ ))
       do
         echo -e "Creating copy of standby 1 for standby $standby in '${dir_list[$standby]}'..." | write_log STDOUT nonewline
         echo "cp -r $dir/. ${dir_list[$standby]}" | write_log
@@ -1465,7 +1467,7 @@ do
       case "$instance" in
         1) # primary
          # Only the primary will be sending WAL.
-         max_wal_senders=$(( $replicas + 3 ))
+         max_wal_senders=$(( replicas + 3 ))
          # the primary doesn't subscribe to any port or slot but will create
          # a slot for all standbys in a fan configuration.
           unset subscribe_port
@@ -1491,7 +1493,7 @@ do
           create_slots=${dir_list[1]}
           ;;
         2) # 1st standby
-          max_wal_senders=$(( $replicas + 2 ))
+          max_wal_senders=$(( replicas + 2 ))
           subscribe_port=${port_list[0]}
           subscribe_slot=${dir_list[$instance - 1]}
           create_slots=(${dir_list[@]:2})
@@ -1535,65 +1537,70 @@ do
   then
     if [[ "$replication_structure" == "chain" ]]
     then
-      max_connections=$(( 3 + $minimum_max_connections ))
+      max_connections=$(( 3 + minimum_max_connections ))
     else
-      max_connections=$(( $replicas + 2 + $minimum_max_connections ))
+      max_connections=$(( replicas + 2 + minimum_max_connections ))
     fi
   fi
-  echo -e "max_connections = $max_connections        # This needs to accommodate max_wal_senders connections in addition to\n" \
-          "                          # regular connections.\n" 2>> $log_file 1>> $dir/custom.conf
 
-  echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can accept connections.\n" 2>> $log_file 1>> $dir/custom.conf
+  {
+    echo -e "max_connections = ${max_connections}        # This needs to accommodate max_wal_senders connections in addition to\n" \
+          "                          # regular connections.\n"
+    echo -e "wal_level = 'hot_standby'  # This needs to be set to 'hot_standby' so that standbys can accept connections.\n"
+    echo -e "port = ${port_list[$current_standby]}\n"
+  } 2>> $log_file 1>> "$dir/custom.conf"
 
-  echo -e "port = ${port_list[$current_standby]}\n" 2>> $log_file 1>> $dir/custom.conf
-
-  if [ $(version $pg_version) -ge $(version "9.5.0") ]
+  if [ "$(version "$pg_version")" -ge "$(version "9.5.0")" ]
   then
-    echo -e "cluster_name = '${dir_list[$current_standby]}'\n" 2>> $log_file 1>> $dir/custom.conf
+    echo -e "cluster_name = '${dir_list[$current_standby]}'\n" 2>> $log_file 1>> "$dir/custom.conf"
   fi
 
   # Only set up streaming replication configuration for instances that will
   # use it.
-  if [[ $max_wal_senders > 0 ]]
+  if [[ $max_wal_senders -gt 0 ]]
   then
-    echo -e "max_wal_senders = $max_wal_senders        # This is set to number of subscribing standbys + 1.  This then allows use\n" \
-            "                          # of tools like pg_basebackup that also uses streaming replication.\n" 2>> $log_file 1>> $dir/custom.conf
+    echo -e "max_wal_senders = ${max_wal_senders}        # This is set to number of subscribing standbys + 1.  This then allows use\n" \
+            "                          # of tools like pg_basebackup that also uses streaming replication.\n" 2>> $log_file 1>> "$dir/custom.conf"
 
     # If replication slots are to be used, set the number of replication slots
     # to match that of WAL senders.  Otherwise we need to guess how many WAL
     # files to keep behind.
     if $replication_slots
     then
-      echo -e "max_replication_slots = $max_wal_senders  # This allows the standbys to tell the primary what WAL\n" \
-	      "                          # location they're up to." 2>> $log_file 1>> $dir/custom.conf
+      echo -e "max_replication_slots = ${max_wal_senders}  # This allows the standbys to tell the primary what WAL\n" \
+	      "                          # location they're up to." 2>> $log_file 1>> "$dir/custom.conf"
     else
-      echo "wal_keep_segments = 6" 2>> $log_file 1>> $dir/custom.conf
+      echo "wal_keep_segments = 6" 2>> $log_file 1>> "$dir/custom.conf"
     fi
 
     if [[ $instance -eq 1 ]]
     then
       # Add authentication entries to replicate to a slave.
-      echo "local   replication     rep_user                           trust" 2>> $log_file 1>> $dir/pg_hba.conf
-      echo "host    replication     rep_user   127.0.0.1/32            trust" 2>> $log_file 1>> $dir/pg_hba.conf
-      echo "host    replication     rep_user   ::1/128                 trust" 2>> $log_file 1>> $dir/pg_hba.conf
+      {
+        echo "local   replication     rep_user                           trust"
+        echo "host    replication     rep_user   127.0.0.1/32            trust"
+        echo "host    replication     rep_user   ::1/128                 trust"
+      } 2>> $log_file 1>> "$dir/pg_hba.conf"
     fi
   fi
 
   # Set all standbys to be hot standbys.
   if [[ $instance -ne 1 ]]
   then
-    echo "hot_standby = on           # Needed to allow connection to this standby" 2>> $log_file 1>> $dir/custom.conf
-    echo "standby_mode = 'on'" 2>> $log_file 1>> $dir/recovery.conf
-    echo "recovery_target_timeline = 'latest'" 2>> $log_file 1>> $dir/recovery.conf
+    echo "hot_standby = on           # Needed to allow connection to this standby" 2>> $log_file 1>> "$dir/custom.conf"
+    {
+      echo "standby_mode = 'on'"
+      echo "recovery_target_timeline = 'latest'"
+      echo "primary_conninfo = 'host=127.0.0.1 user=rep_user port=${subscribe_port} application_name=standby${current_standby}'"
+    } 2>> $log_file 1>> "$dir/recovery.conf"
 
-    echo "primary_conninfo = 'host=127.0.0.1 user=rep_user port=$subscribe_port application_name=standby$current_standby'" 2>> $log_file 1>> $dir/recovery.conf
     if $replication_slots
     then
-      echo "primary_slot_name = '"$subscribe_slot"_physical_slot'" 2>> $log_file 1>> $dir/recovery.conf
+      echo "primary_slot_name = '${subscribe_slot}_physical_slot'" 2>> $log_file 1>> "$dir/recovery.conf"
     fi
   fi
 
-  start_instance $dir $instance 1
+  start_instance "$dir" "$instance" 1
 
   if $replication_slots
   then
@@ -1602,7 +1609,7 @@ do
     then
       for create_slot in ${create_slots[*]}
       do
-        create_replication_slots_command=$create_replication_slots_command"SELECT pg_create_physical_replication_slot('"$create_slot"_physical_slot');"
+        create_replication_slots_command=$create_replication_slots_command"SELECT pg_create_physical_replication_slot('${create_slot}_physical_slot');"
       done
     fi
   fi
@@ -1613,7 +1620,7 @@ do
   if [[ $instance -eq 1 ]]
   then
     echo "psql -p ${port_list[0]} -h localhost -c 'SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;$create_replication_slots_command;' -d postgres" | write_log
-    psql -p ${port_list[0]} -h localhost -c "SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;$create_replication_slots_command" -d postgres &>> $log_file
+    psql -p "${port_list[0]}" -h localhost -c "SET SESSION synchronous_commit TO 'off';CREATE USER rep_user REPLICATION;$create_replication_slots_command" -d postgres &>> $log_file
 
     if [[ $? -ne 0 ]]
     then
@@ -1623,7 +1630,7 @@ do
   elif $replication_slots
   then
     echo "psql -p ${port_list[$current_standby]} -h localhost -c 'SET SESSION synchronous_commit TO 'off';$create_replication_slots_command;' -d postgres" | write_log
-    psql -p ${port_list[$current_standby]} -h localhost -c "SET SESSION synchronous_commit TO 'off';$create_replication_slots_command" -d postgres &>> $log_file
+    psql -p "${port_list[$current_standby]}" -h localhost -c "SET SESSION synchronous_commit TO 'off';$create_replication_slots_command" -d postgres &>> $log_file
 
     if [[ $? -ne 0 ]]
     then
@@ -1638,7 +1645,7 @@ trap - 0
 
 # Output the final ASCII representation of the replication structure.
 IFS=""
-echo -e $ascii_report
+echo -e "$ascii_report"
 IFS=" "
 
 if [[ -z $tool ]]
