@@ -5,7 +5,7 @@
 default_replicas=1 # Default number of replicas
 default_starting_port=5530
 default_replication_structure='fan'
-minimum_max_connections=5 # The minimum number of max connections which will
+minimum_max_connections=8 # The minimum number of max connections which will
                           # increase by max_wal_senders.
 
 # Run prerequisite checks
@@ -1423,8 +1423,8 @@ do
   elif [[ $current_standby -eq 1 ]]
   then
     echo -e "Creating standby $current_standby from primary in '${dir}'..." | write_log STDOUT nonewline
-    echo "pg_basebackup -x -D $dir -h localhost -p ${port_list[0]} -U rep_user" | write_log
-    pg_basebackup -x -D "$dir" -h localhost -p "${port_list[0]}" -U rep_user &>> $log_file
+    echo "pg_basebackup -X fetch -D $dir -h localhost -p ${port_list[0]} -U rep_user" | write_log
+    pg_basebackup -X fetch -D "$dir" -h localhost -p "${port_list[0]}" -U rep_user &>> $log_file
 
     report_status $?
 
