@@ -1423,8 +1423,8 @@ do
   elif [[ $current_standby -eq 1 ]]
   then
     echo -e "Creating standby $current_standby from primary in '${dir}'..." | write_log STDOUT nonewline
-    echo "pg_basebackup -x -D $dir -h localhost -p ${port_list[0]} -U rep_user" | write_log
-    pg_basebackup -x -D "$dir" -h localhost -p "${port_list[0]}" -U rep_user &>> $log_file
+    echo "pg_basebackup -X fetch -D $dir -h localhost -p ${port_list[0]} -U rep_user" | write_log
+    pg_basebackup -X fetch -D "$dir" -h localhost -p "${port_list[0]}" -U rep_user &>> $log_file
 
     report_status $?
 
