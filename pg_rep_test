@@ -588,7 +588,7 @@ function start_instance()
         # do nothing
         ;;
       *)
-        echo -e "Error: Failed to start instance in '$instance_dir'.  Rechecking..." | write_log STDOUT 
+        echo -e "Error: Failed to start instance in '$instance_dir'.  Rechecking..." | write_log STDOUT
         sleep 0.5
 
         echo "pg_ctl -D $dir status" | write_log
@@ -602,13 +602,13 @@ function start_instance()
           return 0
         fi
 
-        echo "Error: Instance doesn't appear to be available '$instance_dir'.  Retrying..." | write_log STDOUT 
+        echo "Error: Instance doesn't appear to be available '$instance_dir'.  Retrying..." | write_log STDOUT
         start_instance "$instance_dir" "$instance_number" $(( retry_count - 1 ))
         ;;
       esac
   elif [[ $status -ne 0 ]]
   then
-    echo "Error: Attempts to start '$instance_dir' have failed." | write_log STDOUT 
+    echo "Error: Attempts to start '$instance_dir' have failed." | write_log STDOUT
     exit 1
   fi
 }
@@ -839,7 +839,7 @@ file_body=$(cat <<-'TOOL_FILE'
 	  status                 list all instances, their ports, data directories and
 	                         whether they are running or not
 	  start                  start all instances
-	  stop                   stops all instances, which can be used with the -m 
+	  stop                   stops all instances, which can be used with the -m
 	                         option
 	  restart                restart all instances
 	  destroy                stops (if started) and deletes all instances; also
@@ -1267,6 +1267,18 @@ then
   initdb_checksums='-k'
 fi
 
+
+# From PostgreSQL 12, recovery is configured as part of the main config.
+if [ "$(version "$pg_version")" -ge "$(version "12.0.0")" ]
+then
+  recovery_conf='custom.conf'
+else
+  recovery_conf='recovery.conf'
+
+  # standby_mode is only supported in versions prior to 12.
+  echo "standby_mode = 'on'" 2>> $log_file 1>> "$dir/$recovery_conf"
+fi
+
 #### Validate parameters ####
 
 # Set default number of replicas to 1.
@@ -1438,7 +1450,14 @@ do
     mv "$dir"/custom.conf{.template,}
     if [[ -n $archive_dir ]]
     then
-      echo -e "restore_command = 'cp \"$(readlink -f "$archive_dir")/%f\" \"%p\"'" 2>> $log_file 1>> "$dir/recovery.conf"
+      echo -e "restore_command = 'cp \"$(readlink -f "$archive_dir")/%f\" \"%p\"'" 2>> $log_file 1>> "$dir/$recovery_conf"
+    fi
+
+    # From version 12 we need to create a standby.signal file on standbys.
+    if [ "$(version "$pg_version")" -ge "$(version "12.0.0")" ]
+    then
+      echo "touch $dir/standby.signal" | write_log
+      touch "$dir/standby.signal" 2>> $log_file
     fi
 
     # Now that we've got one base backup, we can just copy it for every remaining standby.
@@ -1589,14 +1608,13 @@ do
   then
     echo "hot_standby = on           # Needed to allow connection to this standby" 2>> $log_file 1>> "$dir/custom.conf"
     {
-      echo "standby_mode = 'on'"
       echo "recovery_target_timeline = 'latest'"
       echo "primary_conninfo = 'host=127.0.0.1 user=rep_user port=${subscribe_port} application_name=standby${current_standby}'"
-    } 2>> $log_file 1>> "$dir/recovery.conf"
+    } 2>> $log_file 1>> "$dir/$recovery_conf"
 
     if $replication_slots
     then
-      echo "primary_slot_name = '${subscribe_slot}_physical_slot'" 2>> $log_file 1>> "$dir/recovery.conf"
+      echo "primary_slot_name = '${subscribe_slot}_physical_slot'" 2>> $log_file 1>> "$dir/$recovery_conf"
     fi
   fi
 
@@ -1654,3 +1672,4 @@ then
 fi
 
 exit 0
+
