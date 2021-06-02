@@ -26,7 +26,7 @@ fi
 
 
 # Get the version details of the current PostgreSQL installation
-read -r pg_version <<<"$(postgres -V | grep -Po '\d+?\.\d+?(\.\d+)?')"
+read -r pg_version <<<"$(postgres -V | grep -Po '\d+(\.\d+)?(\.\d+)?')"
 
 function usage()
 {
@@ -1589,7 +1589,12 @@ do
       echo -e "max_replication_slots = ${max_wal_senders}  # This allows the standbys to tell the primary what WAL\n" \
 	      "                          # location they're up to." 2>> $log_file 1>> "$dir/custom.conf"
     else
-      echo "wal_keep_segments = 6" 2>> $log_file 1>> "$dir/custom.conf"
+      if [ "$(version "$pg_version")" -ge "$(version "13.0")" ]
+      then
+        echo "wal_keep_size = 96" 2>> $log_file 1>> "$dir/custom.conf"
+      else
+        echo "wal_keep_segments = 6" 2>> $log_file 1>> "$dir/custom.conf"
+      fi
     fi
 
     if [[ $instance -eq 1 ]]
