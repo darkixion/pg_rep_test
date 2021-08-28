@@ -28,7 +28,7 @@ fi
 
 
 # Get the version details of the current PostgreSQL installation
-read -r pg_version <<<"$(postgres -V | grep -Po '\d+(\.\d+)?(\.\d+)?')"
+read -r pg_version <<<"$(postgres -V | sed 's/devel/.0/' | grep -Po '\d+(\.\d+)?(\.\d+)?')"
 
 function usage()
 {
