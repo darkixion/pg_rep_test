@@ -953,7 +953,7 @@ file_body=$(cat <<-'TOOL_FILE'
 	  local standby_port=$1
 	  local primary_port_query="\
 	    WITH q AS (\
-	      SELECT "*" FROM regexp_split_to_table( pg_read_file('recovery.conf'), E'\\\\n') AS x\
+	      SELECT "*" FROM regexp_split_to_table( pg_read_file('${recovery_conf}'), E'\\\\n') AS x\
 	      )\
 	      SELECT regexp_replace(x, '.*port=([0-9]*).*', E'\\\\1')\
 	      FROM q\
