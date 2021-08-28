@@ -7,6 +7,8 @@ default_starting_port=5530
 default_replication_structure='fan'
 minimum_max_connections=8 # The minimum number of max connections which will
                           # increase by max_wal_senders.
+xlog_last_function="pg_last_wal_replay_location"
+xlog_current_function="pg_current_wal_location"
 
 # Run prerequisite checks
 prerequisite_commands="initdb psql pg_basebackup pg_ctl lsof getopts rmdir rm sync tput"
@@ -811,6 +813,12 @@ function check_archive_dir_usage()
 function create_tool()
 {
 
+if [ "$(version "$pg_version")" -ge "$(version "10.0.0")" ]
+then
+  xlog_last_function="pg_last_xlog_replay_location"
+  xlog_current_function="pg_current_xlog_location"
+fi
+
 file_header=$(cat <<-TOOL_CONFIG
 	#!/bin/bash
 
@@ -923,10 +931,10 @@ file_body=$(cat <<-'TOOL_FILE'
 
 	  case ${standby:-$(in_recovery $port)} in
 	    true)
-	      xlog_function='pg_last_xlog_replay_location'
+	      xlog_function="${xlog_last_function}"
 	      ;;
 	    false)
-	      xlog_function='pg_current_xlog_location'
+	      xlog_function="${xlog_current_function}"
 	      ;;
 	    *)
 	      echo "N/A"
