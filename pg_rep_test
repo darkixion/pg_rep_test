@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Default values
 
@@ -812,7 +812,7 @@ function create_tool()
 {
 
 file_header=$(cat <<-TOOL_CONFIG
-	#!/bin/bash
+	#!/usr/bin/env bash
 
 	# instance data associated with this maintenance script
 	datadirs=(${dir_list[*]})
