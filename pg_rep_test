@@ -99,7 +99,7 @@ do
       ;;
     ?)
       usage
-      exit 1
+      exit 0
       ;;
   esac
 done
@@ -867,7 +867,7 @@ file_body=$(cat <<-'TOOL_FILE'
 	      ;;
 	    ?)
 	      usage
-	      exit 1
+	      exit 0
 	      ;;
 	  esac
 	done
