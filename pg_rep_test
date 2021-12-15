@@ -1231,8 +1231,8 @@ file_body=$(cat <<-'TOOL_FILE'
 TOOL_FILE
 )
 
-  local IFS=""
-  while [[ $(ls -A "tool${subset:+'_'$subset}.pg_rep_test" 2> /dev/null) ]]
+  unset IFS
+  while [[ $(ls -A "tool${subset:+_$subset}.pg_rep_test" 2> /dev/null) ]]
   do
     ((subset++))
   done
